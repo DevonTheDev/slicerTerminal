@@ -608,8 +608,6 @@ local filenames = {
                                            net.WriteEntity(usedConsole) -- Allows us to delete the console on server side
                                        net.SendToServer()
 
-                                       -- chat.AddText already targets the local player.
-                                       chat.AddText(Color(255, 251, 0), "[" .. string.upper(consoleInfo["name"]) .. "]: ", Color(255, 255, 255, 255), callingPlayer:GetName() .. " has downloaded '" .. consoleInfo["fileName"] .. ".data'")
                                    end)
                                    hook.Add("Think", "downloadDataFile", function()
                                        if(timer.Exists("DownloadDataFile")) then
@@ -788,8 +786,6 @@ local filenames = {
                                            net.WriteEntity(usedConsole) -- Allows us to delete the console on server side
                                        net.SendToServer()
 
-                                       -- chat.AddText already targets the local player.
-                                       chat.AddText(Color(255, 251, 0), "[" .. string.upper(consoleInfo["name"]) .. "]: ", Color(255, 255, 255, 255), callingPlayer:GetName() .. " has downloaded '" .. consoleInfo["fileName"] .. ".sys'")
                                    end)
                                    hook.Add("Think", "downloadServerFile", function()
                                        if(timer.Exists("DownloadServerFile")) then
@@ -967,8 +963,6 @@ local filenames = {
                                        net.WriteEntity(usedConsole) -- Allows us to delete the console on server side
                                    net.SendToServer()
 
-                                   -- chat.AddText already targets the local player.
-                                   chat.AddText(Color(255, 251, 0), "[" .. string.upper(consoleInfo["name"]) .. "]: ", Color(255, 255, 255, 255), callingPlayer:GetName() .. " has executed '" .. consoleInfo["fileName"] .. ".exe'")
                                    return
                                end
                            end
@@ -1082,4 +1076,18 @@ PURPOSE
 
 This code closes the UI if the player has died while in the console
 --]]/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+-- Only the server can confirm that a completion request was accepted.
+-- This notice changes chat only, never a newer terminal's UI.
+net.Receive("SlicerCompleted", function()
+    local consoleName = net.ReadString()
+    local fileName = net.ReadString()
+    local fileType = net.ReadString()
+    local playerName = net.ReadString()
+    local extension = ({data = "data", server = "sys", tools = "exe"})[fileType]
+    if not extension then return end
+    local verb = fileType == "tools" and "executed" or "downloaded"
+    chat.AddText(Color(255, 251, 0), "[" .. string.upper(consoleName) .. "]: ",
+        Color(255, 255, 255, 255), playerName .. " has " .. verb .. " '" .. fileName .. "." .. extension .. "'")
+end)
+
 net.Receive("PlayerDied", closeConsoleUI)

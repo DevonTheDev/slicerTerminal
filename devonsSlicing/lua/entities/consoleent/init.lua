@@ -10,7 +10,7 @@ local linkedDoors = {}
 for _, name in ipairs({
     "PlayerSpawnedConsole", "ServerSendsEntityInformation", "updateInUse",
     "PlayerDied", "playerQuitConsole", "ServerWaitingForEntity", "PlayerAlert",
-    "PlayerActivatedDoor", "destroyOnServer",
+    "PlayerActivatedDoor", "destroyOnServer", "SlicerCompleted",
 }) do
     util.AddNetworkString(name)
 end
@@ -139,25 +139,42 @@ end)
 local function canComplete(ply, console, isDoor)
     local session = sessions[ply]
     if not session or session.console ~= console or not IsValid(console) then return false end
-    if not hasHackingTool(ply) or CurTime() < session.completeAt then return false end
     local information = console.SlicerInformation
-    if not information then return false end
-    if isDoor then return information.fileType == "tools" and IsValid(console.SlicerDoor) end
-    return information.fileType == "data" or information.fileType == "server"
+    local validType = information and (isDoor
+        and information.fileType == "tools" and IsValid(console.SlicerDoor)
+        or not isDoor and (information.fileType == "data" or information.fileType == "server"))
+    if not hasHackingTool(ply) or CurTime() < session.completeAt or not validType then
+        -- The client has closed its completed countdown. Do not strand this
+        -- authenticated session if a tool or other requirement changed.
+        releaseSession(ply, true)
+        ply:ChatPrint("Hacking was not completed. Equip the hacking tool and use the console again to retry.")
+        return false
+    end
+    return true
+end
+
+local function finishConsole(ply, console)
+    local information = console.SlicerInformation
+    releaseSession(ply, false)
+    console:Remove() -- OnRemove unlocks only this console's linked door.
+    net.Start("SlicerCompleted")
+        net.WriteString(information.name)
+        net.WriteString(information.fileName)
+        net.WriteString(information.fileType)
+        net.WriteString(ply:GetName())
+    net.Send(ply)
 end
 
 net.Receive("PlayerActivatedDoor", function(_, ply)
     local console = net.ReadEntity()
     if not canComplete(ply, console, true) then return end
-    releaseSession(ply, false)
-    console:Remove() -- OnRemove unlocks only this console's linked door.
+    finishConsole(ply, console)
 end)
 
 net.Receive("destroyOnServer", function(_, ply)
     local console = net.ReadEntity()
     if not canComplete(ply, console, false) then return end
-    releaseSession(ply, false)
-    console:Remove()
+    finishConsole(ply, console)
 end)
 
 function ENT:OnRemove()

@@ -36,7 +36,11 @@ For a terminal named `terminal` and file named `secret`:
 Downloads take the configured login delay plus a second download delay. Tools
 require the login delay. Successful completion consumes the terminal. Removing
 or completing a linked terminal unlocks its own door. Completion feedback appears
-once in the local player's chat, regardless of the number of connected players.
+once in the local player's chat after the server accepts completion, regardless
+of the number of connected players. Sending a request alone never announces
+success. If that player's matching session fails its tool, timing or terminal-type
+check, the terminal remains intact, its reservation is released and the player
+receives a failure notice. Re-equip the tool and use the console again to retry.
 
 ## Session and network safety
 
@@ -68,7 +72,8 @@ Lua 5.1 and newer; the current pass was verified with Lua 5.3 via `texlua`.
 
 Coverage includes malicious/malformed network requests, concurrent users,
 creator-only setup, stale/deleted entities, independent door links, session
-release, all three successful client command flows, death during countdowns,
+release, all three successful client command flows, death during countdowns, rejected-completion recovery, authoritative success
+feedback, replayed requests and late feedback while another console is open,
 repeated folder navigation, setup validation and independent/repeated setup
 forms, weapon hold-type initialization, disabled primary/secondary attacks, single completion feedback with 1, 2,
 and 12 connected players, and compilation of all five addon Lua
@@ -97,6 +102,9 @@ emulated. Before a live rollout, use a test server to check:
 - With two players, confirm only one can enter a terminal at a time
 - Quit, die during login/download, disconnect, and remove an occupied terminal;
   confirm its UI closes and another player can use any surviving terminal
+- Strip or switch away from the hacking tool during each completion flow;
+  confirm no success is printed, the terminal remains available and another
+  player can use it. Re-equip and retry normally
 - Enter a folder, return, and re-enter several times; check for Lua errors
 - Link two tools terminals to different doors; finishing one must leave the
   other door locked, and using unrelated entities must still work

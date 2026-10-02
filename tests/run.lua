@@ -81,10 +81,12 @@ test("invalid activators and missing weapons do not crash Use", function()
 end)
 
 test("download completion cannot skip the configured minimum delays", function()
-    local env, _, hacker, console = fixture()
+    local env, _, hacker, console, info = fixture()
     env.open(hacker, console)
     env.receive("destroyOnServer", hacker, console)
     equal(console.removed, nil)
+    equal(info.inUse, false, "An early completion must release its rejected session")
+    env.open(hacker, console) -- Retry explicitly; the rejected session cannot resume.
     env.now = 4
     env.receive("destroyOnServer", hacker, console)
     equal(console.removed, true)
@@ -484,6 +486,8 @@ for _, kind in ipairs({{folder = "data", extension = "data", timer = "DownloadDa
                 equal(#env.chatMessages, 0, "Download was announced before its timer completed")
                 env.fireTimer(kind.timer)
             end
+            equal(#env.chatMessages, 0, "The request is not yet an accepted completion")
+            env.receive("SlicerCompleted", nil, "terminal", "secret", kind.folder, caller:GetName())
             equal(#env.chatMessages, 1, "Completion feedback must be local and independent of server population")
             local message = env.chatMessages[1]
             equal(message[2], "[TERMINAL]: ")
@@ -528,6 +532,8 @@ test("all five addon Lua files compile with GLua syntax translation", function()
         assert((loadstring or load)(source, "@" .. path))
     end
 end)
+
+dofile("tests/completion.lua")(gmod, test, equal)
 
 print(string.format("\n%d passed, %d failed", passed, failed))
 if failed > 0 then os.exit(1) end
