@@ -1,131 +1,177 @@
-AddCSLuaFile("lua/entities/consoleent/cl_init.lua")
+AddCSLuaFile("entities/consoleent/cl_init.lua")
 AddCSLuaFile("entities/consoleent/shared.lua")
 
 include("entities/consoleent/shared.lua")
 include("autorun/server/sv_config.lua")
 
-function ENT:Initialize()
+local sessions = {}
+local linkedDoors = {}
 
+for _, name in ipairs({
+    "PlayerSpawnedConsole", "ServerSendsEntityInformation", "updateInUse",
+    "PlayerDied", "playerQuitConsole", "ServerWaitingForEntity", "PlayerAlert",
+    "PlayerActivatedDoor", "destroyOnServer",
+}) do
+    util.AddNetworkString(name)
+end
+
+local function releaseSession(ply, closeUI)
+    local session = sessions[ply]
+    if not session then return end
+    sessions[ply] = nil
+    if session.console.SlicerInformation then
+        session.console.SlicerInformation.inUse = false
+    end
+    if closeUI and IsValid(ply) then
+        net.Start("PlayerDied")
+        net.Send(ply)
+    end
+end
+
+local function hasHackingTool(ply)
+    if not IsValid(ply) or not ply:IsPlayer() or not ply:Alive() then return false end
+    local weapon = ply:GetActiveWeapon()
+    return IsValid(weapon) and weapon:GetClass() == "weapon_hacking"
+end
+
+function ENT:Initialize()
     self:SetModel(returnEntityModel())
     self:SetSolid(SOLID_BBOX)
     self:SetUseType(SIMPLE_USE)
-        local concatValue = #ents.FindByClass("consoleent") -- Find the number of spawned consoles
-    self:SetName("DevonsConsoleEntity" .. concatValue) -- Sets a unique name
-
+    -- Counting live consoles reuses names when an earlier console is removed.
+    self:SetName("DevonsConsoleEntity" .. self:GetCreationID())
 end
 
--- Checks to see if the player has spawned a console
-util.AddNetworkString("PlayerSpawnedConsole")
 hook.Add("PlayerSpawnedSENT", "checkForConsole", function(ply, ent)
-
-    if(string.find(ent:GetName(), "DevonsConsoleEntity")) then -- If the entity is the console
-        net.Start("PlayerSpawnedConsole")
-            net.WriteEntity(ply) -- Send the player who spawned it to the server
-            net.WriteString(ent:GetName())
-        net.Send(ply)
-    end
-
+    if not IsValid(ent) or ent:GetClass() ~= "consoleent" then return end
+    ent.SlicerCreator = ply
+    net.Start("PlayerSpawnedConsole")
+        net.WriteEntity(ply)
+        net.WriteString(ent:GetName())
+    net.Send(ply)
 end)
 
-playersInConsole = {}
-
-function ENT:AcceptInput(name, activator, caller) -- Sets up interactions for the console       
-
-local canAccess = nil
-local information = nil
-
-    if(name == "Use") then -- If the entity is "used"
-        if(activator:GetActiveWeapon():GetClass() == "weapon_hacking") then
-            for k, v in pairs(returnSpawnedEntities()) do -- Loop through the table of spawned entities
-                if(v.entityName == self:GetName()) then -- If the entity name is equal to a table name
-                    information = v.information
-                    canAccess = true
-                end
-            end
-            if(canAccess == true) then
-                util.AddNetworkString("ServerSendsEntityInformation")
-                net.Start("ServerSendsEntityInformation") -- Start a network string
-                    net.WriteEntity(self) -- Sends the console info
-                    net.WriteEntity(activator) -- Sends the player info
-                    net.WriteTable(information) -- Send all the console information in a table
-                    net.WriteString(self:GetName())
-                net.Send(activator)
-
-            table.insert(playersInConsole, table.maxn(playersInConsole), activator:SteamID64())   
-            end
-        else
-            activator:ChatPrint("You don't have the necessary tools to hack this console.")
-        end   
+function ENT:AcceptInput(name, activator, caller)
+    if name ~= "Use" or not IsValid(activator) or not activator:IsPlayer() then return end
+    if not hasHackingTool(activator) then
+        activator:ChatPrint("You don't have the necessary tools to hack this console.")
+        return
     end
+
+    local information = self.SlicerInformation
+    if not information then return end
+    if information.fileType == "tools" and not IsValid(self.SlicerDoor) then
+        activator:ChatPrint("This console does not have a linked door yet.")
+        return
+    end
+    if information.inUse or sessions[activator] then
+        activator:ChatPrint("This console or your hacking tool is already in use.")
+        return
+    end
+
+    -- Reserve on the server before another player's Use can be handled. The
+    -- client expects inUse=false in its own opening message.
+    local clientInformation = table.Copy(information)
+    information.inUse = true
+    sessions[activator] = {
+        console = self,
+        completeAt = CurTime() + information.delay * (information.fileType == "tools" and 1 or 2),
+    }
+    net.Start("ServerSendsEntityInformation")
+        net.WriteEntity(self)
+        net.WriteEntity(activator)
+        net.WriteTable(clientInformation)
+        net.WriteString(self:GetName())
+    net.Send(activator)
 end
 
-util.AddNetworkString("updateInUse")
-net.Receive("updateInUse", function()
-    updateInUse(net.ReadString(), true)
-end)
+-- Kept for existing clients; reservation is now authoritative in AcceptInput.
+net.Receive("updateInUse", function() end)
 
-util.AddNetworkString("PlayerDied")
 hook.Add("PlayerDeath", "checkForInConsole", function(victim)
-    if table.HasValue(playersInConsole, victim:SteamID64()) then
-        net.Start("PlayerDied")
-        net.Send(victim)
-        table.remove(playersInConsole, victim:SteamID64())
+    releaseSession(victim, true)
+end)
+
+hook.Add("PlayerDisconnected", "slicerReleaseConsole", function(ply)
+    releaseSession(ply, false)
+    ply.SlicerPendingConsole = nil
+end)
+
+net.Receive("playerQuitConsole", function(_, ply)
+    -- Never trust the player/entity IDs in the legacy payload.
+    releaseSession(ply, false)
+end)
+
+-- Configuration records the pending console on the authenticated creator.
+-- The legacy packet is unnecessary and must not select another player's door.
+net.Receive("ServerWaitingForEntity", function() end)
+
+hook.Add("PlayerSay", "doesThePlayerSetAnEntity", function(ply, text)
+    if text ~= "!setEntity" then return end
+    local console = ply.SlicerPendingConsole
+    if not IsValid(console) or console.SlicerCreator ~= ply then return end
+    local door = ply:GetEyeTrace().Entity
+    if not IsValid(door) or door:GetClass() ~= "func_door" then
+        ply:ChatPrint("That is not a valid door object.")
+        return
     end
+    if IsValid(linkedDoors[door]) then
+        ply:ChatPrint("That door is already linked to a console.")
+        return
+    end
+    console.SlicerDoor = door
+    linkedDoors[door] = console
+    ply.SlicerPendingConsole = nil
+    door:Fire("Lock")
+    ply:ChatPrint("Entity successfully set")
+    return ""
 end)
 
-util.AddNetworkString("playerQuitConsole")
-net.Receive("playerQuitConsole", function()
-
-    table.remove(playersInConsole, net.ReadEntity():SteamID64())
-    updateInUse(net.ReadEntity():GetName(), false)
-
+hook.Add("PlayerUse", "isUsingOurObject", function(ply, ent)
+    if IsValid(linkedDoors[ent]) then
+        net.Start("PlayerAlert")
+        net.Send(ply)
+        return false
+    end
+    -- Return nil for unrelated entities so other addons can handle the hook.
 end)
 
-doorStillLocked = nil
+local function canComplete(ply, console, isDoor)
+    local session = sessions[ply]
+    if not session or session.console ~= console or not IsValid(console) then return false end
+    if not hasHackingTool(ply) or CurTime() < session.completeAt then return false end
+    local information = console.SlicerInformation
+    if not information then return false end
+    if isDoor then return information.fileType == "tools" and IsValid(console.SlicerDoor) end
+    return information.fileType == "data" or information.fileType == "server"
+end
 
-util.AddNetworkString("ServerWaitingForEntity")
-util.AddNetworkString("PlayerAlert")
-net.Receive("ServerWaitingForEntity", function()
-
-    local callingPlayer = net.ReadEntity()
-    doorStillLocked = true
-
-    hook.Add("PlayerSay", "doesThePlayerSetAnEntity", function(ply, text)
-        if(text == "!setEntity" and ply:SteamID64() == callingPlayer:SteamID64()) then
-            if(ply:GetEyeTrace().Entity:GetClass() == "func_door") then
-                lockedDoor = ply:GetEyeTrace().Entity:GetCreationID()
-                actualEntity = ply:GetEyeTrace().Entity
-                actualEntity:Fire("Lock")
-                ply:ChatPrint("Entity successfully set")
-            else 
-                ply:ChatPrint("That is not a valid door object.")
-            end
-        end
-    end)
-    hook.Add("PlayerUse", "isUsingOurObject", function(ply2, ent)
-        if(doorStillLocked) then
-            if(lockedDoor == ply2:GetEyeTrace().Entity:GetCreationID()) then
-                net.Start("PlayerAlert")
-                net.Send(ply2)
-                return false
-            else
-                return true
-            end  
-        end
-        
-    end)
-
+net.Receive("PlayerActivatedDoor", function(_, ply)
+    local console = net.ReadEntity()
+    if not canComplete(ply, console, true) then return end
+    releaseSession(ply, false)
+    console:Remove() -- OnRemove unlocks only this console's linked door.
 end)
 
-util.AddNetworkString("PlayerActivatedDoor")
-net.Receive("PlayerActivatedDoor", function()
-    doorStillLocked = false
-    actualEntity:Fire("Unlock")
-
-    net.ReadEntity():Remove()
+net.Receive("destroyOnServer", function(_, ply)
+    local console = net.ReadEntity()
+    if not canComplete(ply, console, false) then return end
+    releaseSession(ply, false)
+    console:Remove()
 end)
 
-util.AddNetworkString("destroyOnServer")
-net.Receive("destroyOnServer", function()
-    net.ReadEntity():Remove()
-end)
+function ENT:OnRemove()
+    for ply, session in pairs(sessions) do
+        if session.console == self then releaseSession(ply, true) end
+    end
+    if IsValid(self.SlicerDoor) then
+        linkedDoors[self.SlicerDoor] = nil
+        self.SlicerDoor:Fire("Unlock")
+    end
+    if IsValid(self.SlicerCreator) and self.SlicerCreator.SlicerPendingConsole == self then
+        self.SlicerCreator.SlicerPendingConsole = nil
+    end
+    for i = #spawnedEntities, 1, -1 do
+        if spawnedEntities[i].entity == self then table.remove(spawnedEntities, i) end
+    end
+end

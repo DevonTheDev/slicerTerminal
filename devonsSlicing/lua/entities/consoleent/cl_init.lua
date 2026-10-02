@@ -1,5 +1,25 @@
 include("entities/consoleent/shared.lua")
 
+-- A terminal has several independent frames, timers and Think hooks. Tear all
+-- of them down together so death, quitting and completion cannot leave a timer
+-- reopening a closed terminal or updating a removed panel.
+local function closeConsoleUI()
+    for _, panel in pairs({firstPage, secondPage, insideData, insideServer, insideTools}) do
+        if IsValid(panel) then panel:Remove() end
+    end
+    firstPage, secondPage, insideData, insideServer, insideTools = nil, nil, nil, nil, nil
+    for _, name in ipairs({
+        "AccessDelay", "DownloadDataFile", "DownloadServerFile",
+        "firstPageGlitch", "firstPageReturn", "secondPageGlitch", "secondPageReturn",
+        "dataPageGlitch", "dataPageReturn",
+    }) do
+        timer.Remove(name)
+    end
+    for _, name in ipairs({"printDelay", "downloadDataFile", "downloadServerFile"}) do
+        hook.Remove("Think", name)
+    end
+end
+
 --[[/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     PURPOSE
 
@@ -307,13 +327,12 @@ This code checks to see if the entered value is equal to the quit command, and t
 
        -- Quits the console
        if(string.lower(inputTerminal1:GetValue()) == "/q[" .. consoleInfo["name"] .. "]") then
-           firstPage:Close() -- Closes all ui elements
-           timer.Remove("firstPageGlitch") -- Removes the glitch effect so errors are thrown
-           timer.Remove("firstPageReturn") -- Removes the glitch effect so errors are thrown
+           closeConsoleUI()
            net.Start("playerQuitConsole")
                net.WriteEntity(callingPlayer)
                net.WriteEntity(usedConsole)
            net.SendToServer()
+           return
        end
 
 --[[/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -574,7 +593,10 @@ local filenames = {
                             surface.PlaySound("code_enter.wav")
 
                            if(string.lower(dataInputTerminal:GetValue()) == "//[" .. consoleInfo["name"] .. "]/" .. acceptedFolders[1]) then
-                               insideData:Hide() -- Hides the data panel
+                               insideData:Remove()
+                               insideData = nil
+                               timer.Remove("dataPageGlitch")
+                               timer.Remove("dataPageReturn")
 
                                -- Resets the input terminal
                                inputTerminal2:SetPlaceholderText("Run Commands Here...")
@@ -583,14 +605,12 @@ local filenames = {
                                inputTerminal2:SetTextColor(Color(36, 209, 36, 255))
                                timer.Start("secondPageGlitch")
                                secondPage:Show() -- Shows the previous page
+                               return
                            end
                            if(string.lower(dataInputTerminal:GetValue()) == "/d" .. acceptedFolders[1] .. "/" .. consoleInfo["fileName"] .. ".data") then
                                if(consoleInfo["fileType"] == "data") then
                                    timer.Create("DownloadDataFile", consoleInfo["delay"], 1, function()
-                                       timer.Remove("dataPageGlitch")
-                                       timer.Remove("dataPageReturn")
-                                       insideData:Remove()
-                                       firstPage:Remove()
+                                       closeConsoleUI()
 
                                        net.Start("destroyOnServer")
                                            net.WriteEntity(usedConsole) -- Allows us to delete the console on server side
@@ -754,7 +774,10 @@ local filenames = {
                         surface.PlaySound("code_enter.wav")
 
                            if(string.lower(serverInputTerminal:GetValue()) == "//[" .. consoleInfo["name"] .. "]/" .. acceptedFolders[2]) then
-                               insideServer:Hide() -- Hides the data panel
+                               insideServer:Remove()
+                               insideServer = nil
+                               timer.Remove("dataPageGlitch")
+                               timer.Remove("dataPageReturn")
 
                                -- Resets the input terminal
                                inputTerminal2:SetPlaceholderText("Run Commands Here...")
@@ -763,14 +786,12 @@ local filenames = {
                                inputTerminal2:SetTextColor(Color(36, 209, 36, 255))
                                timer.Start("secondPageGlitch")
                                secondPage:Show() -- Shows the previous page
+                               return
                            end
                            if(string.lower(serverInputTerminal:GetValue()) == "/d" .. acceptedFolders[2] .. "/" .. consoleInfo["fileName"] .. ".sys") then
                                if(consoleInfo["fileType"] == "server") then
                                    timer.Create("DownloadServerFile", consoleInfo["delay"], 1, function()
-                                       timer.Remove("dataPageGlitch")
-                                       timer.Remove("dataPageReturn")
-                                       insideServer:Remove()
-                                       firstPage:Remove()
+                                       closeConsoleUI()
 
                                        net.Start("destroyOnServer")
                                            net.WriteEntity(usedConsole) -- Allows us to delete the console on server side
@@ -934,7 +955,10 @@ local filenames = {
                         surface.PlaySound("code_enter.wav")
 
                            if(string.lower(toolsInputTerminal:GetValue()) == "//[" .. consoleInfo["name"] .. "]/" .. acceptedFolders[3]) then
-                               insideTools:Hide() -- Hides the data panel
+                               insideTools:Remove()
+                               insideTools = nil
+                               timer.Remove("dataPageGlitch")
+                               timer.Remove("dataPageReturn")
 
                                -- Resets the input terminal
                                inputTerminal2:SetPlaceholderText("Run Commands Here...")
@@ -943,13 +967,11 @@ local filenames = {
                                inputTerminal2:SetTextColor(Color(36, 209, 36, 255))
                                timer.Start("secondPageGlitch")
                                secondPage:Show() -- Shows the previous page
+                               return
                            end
                            if(string.lower(toolsInputTerminal:GetValue()) == "/r" .. acceptedFolders[3] .. "/" .. consoleInfo["fileName"] .. ".exe") then
                                if(consoleInfo["fileType"] == "tools") then
-                                   timer.Remove("dataPageGlitch")
-                                   timer.Remove("dataPageReturn")
-                                   insideTools:Remove()
-                                   firstPage:Remove()
+                                   closeConsoleUI()
 
                                    net.Start("PlayerActivatedDoor")
                                        net.WriteEntity(usedConsole) -- Allows us to delete the console on server side
@@ -958,6 +980,7 @@ local filenames = {
                                    for k, v in pairs(player.GetAll()) do
                                        chat.AddText(Color(255, 251, 0), "[" .. string.upper(consoleInfo["name"]) .. "]: ", Color(255, 255, 255, 255), callingPlayer:GetName() .. " has executed '" .. consoleInfo["fileName"] .. ".exe'")
                                    end
+                                   return
                                end
                            end
                            if(string.lower(toolsInputTerminal:GetValue()) != "//[" .. consoleInfo["name"] .. "]/" .. acceptedFolders[3] and string.lower(toolsInputTerminal:GetValue()) != "/r" .. acceptedFolders[3] .. "/" .. consoleInfo["fileName"] .. ".exe") then
@@ -970,13 +993,12 @@ local filenames = {
 
                    -- Quits the console
                    if(string.lower(inputTerminal2:GetValue()) == "/q[" .. consoleInfo["name"] .. "]") then
-                       secondPage:Close()
-                       timer.Remove("secondPageGlitch") -- Removes the glitch effect so errors aren't thrown
-                       timer.Remove("secondPageReturn") -- Removes the glitch effect so errors aren't thrown
+                       closeConsoleUI()
                        net.Start("playerQuitConsole")
                             net.WriteEntity(callingPlayer)
                             net.WriteEntity(usedConsole)
                         net.SendToServer()
+                        return
                    end
 
                    -- Runs an error message for input terminal 2
@@ -1071,26 +1093,4 @@ PURPOSE
 
 This code closes the UI if the player has died while in the console
 --]]/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-net.Receive("PlayerDied", function()
-    firstPage:Remove()
-    timer.Remove("firstPageGlitch") -- Removes the glitch effect so errors aren't thrown
-    timer.Remove("firstPageReturn") -- Removes the glitch effect so errors aren't thrown
-    if(IsValid(secondPage)) then
-        secondPage:Remove()
-    end
-    if(IsValid(insideData)) then
-        insideData:Remove()
-        timer.Remove("dataPageGlitch")
-        timer.Remove("dataPageReturn")
-    end
-    if(IsValid(insideServer)) then
-        insideServer:Remove()
-        timer.Remove("serverPageGlitch")
-        timer.Remove("serverPageReturn")
-    end
-    if(IsValid(insideTools)) then
-        insideTools:Remove()
-        timer.Remove("toolsPageGlitch")
-        timer.Remove("toolsPageReturn")
-    end
-end)
+net.Receive("PlayerDied", closeConsoleUI)
