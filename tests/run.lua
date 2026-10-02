@@ -399,6 +399,20 @@ test("a late death notification with no UI is harmless", function()
     env.receive("PlayerDied", nil)
 end)
 
+test("the hacking tool exposes a callable death-drop hook that overrides the base policy", function()
+    local env = gmod.new()
+    local base = {ShouldDropOnDie = function() return true end}
+    setmetatable(env.SWEP, {__index = base})
+    env.include("weapons/weapon_hacking.lua")
+    local weapon = setmetatable({}, {__index = env.SWEP})
+    -- https://wiki.facepunch.com/gmod/WEAPON:ShouldDropOnDie documents a method,
+    -- not a boolean configuration field. This exercises the Lua hook contract;
+    -- the native engine's death dispatch still needs a game smoke test.
+    equal(type(weapon.ShouldDropOnDie), "function")
+    equal(weapon:ShouldDropOnDie(), false)
+    equal(base:ShouldDropOnDie(), true, "The inherited base policy remains untouched")
+end)
+
 -- The official weapon_base routes SecondaryAttack through CanSecondaryAttack:
 -- https://github.com/Facepunch/garrysmod/blob/master/garrysmod/gamemodes/base/entities/weapons/weapon_base/shared.lua
 -- This local inheritance boundary records the effects rather than firing real

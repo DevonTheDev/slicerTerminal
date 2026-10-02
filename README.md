@@ -19,7 +19,9 @@ and terminal-driven downloads or door unlocking.
    own door; a door cannot be attached to two live terminals. Set up and link
    tools terminals one at a time for each creator.
 4. Equip **Devons Hacking Tool** and use the console. Primary and secondary
-   attack are disabled; right-click must not fire the inherited base weapon.
+   attack are disabled; right-click must not fire the inherited base weapon. Its
+   callable `ShouldDropOnDie` hook returns false, overriding the base weapon
+   policy without replacing the method with a boolean.
 
 For a terminal named `terminal` and file named `secret`:
 
@@ -75,7 +77,8 @@ creator-only setup, stale/deleted entities, independent door links, session
 release, all three successful client command flows, death during countdowns, rejected-completion recovery, authoritative success
 feedback, replayed requests and late feedback while another console is open,
 repeated folder navigation, setup validation and independent/repeated setup
-forms, weapon hold-type initialization, disabled primary/secondary attacks, single completion feedback with 1, 2,
+forms, weapon hold-type initialization, disabled primary/secondary attacks,
+the callable death-drop hook, single completion feedback with 1, 2,
 and 12 connected players, and compilation of all five addon Lua
 files.
 
@@ -99,6 +102,8 @@ emulated. Before a live rollout, use a test server to check:
   rejected form and verify it can still configure its terminal
 - Equip the hacking tool and verify its pistol hold animation in multiplayer;
   with ammunition available, check that left/right-click do not fire or consume it
+- In a test gamemode that enables weapon drops on death, verify the hacking tool
+  is not dropped and its death hook raises no Lua error
 - With two players, confirm only one can enter a terminal at a time
 - Quit, die during login/download, disconnect, and remove an occupied terminal;
   confirm its UI closes and another player can use any surviving terminal

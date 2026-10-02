@@ -13,7 +13,10 @@ SWEP.DrawAmmo = false
 SWEP.Slot = 1
 SWEP.SlotPos = 0
 
-SWEP.ShouldDropOnDie = false
+-- ShouldDropOnDie is an engine hook, not a boolean weapon field.
+function SWEP:ShouldDropOnDie()
+    return false
+end
 
 -- Apply the hold type without replacing the engine's SetHoldType method.
 function SWEP:Initialize()
