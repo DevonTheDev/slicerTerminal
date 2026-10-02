@@ -101,11 +101,6 @@ net.Receive("PlayerSpawnedConsole", function()
     fileType:SetSize(200, 100)
     fileType:Center()
 
-    -- Sets the value whenever a value is selected
-    function fileType.OnSelect()
-        enteredFileType = tostring(fileType:GetSelected())
-    end
-
     -- Allows the spawner to give the console a name
     local consoleNameFrame = vgui.Create("DTextEntry", initialParent)
     consoleNameFrame:AllowInput(true)
@@ -114,11 +109,6 @@ net.Receive("PlayerSpawnedConsole", function()
     consoleNameFrame:SetSize(200, 100)
     consoleNameFrame:SetPos(fileType:GetX(), fileType:GetY() - 200)
     consoleNameFrame:SetTextColor(Color(0, 0, 0, 255))
-
-    -- Sets the value whenever the text entry loses focus
-    function consoleNameFrame.OnLoseFocus()
-        enteredConsoleName = tostring(consoleNameFrame:GetValue())
-    end
 
     -- Allows the spawner to give the time for the slice
     local slicerTime = vgui.Create("DTextEntry", initialParent)
@@ -129,11 +119,6 @@ net.Receive("PlayerSpawnedConsole", function()
     slicerTime:SetPos(fileType:GetX(), fileType:GetY() - 100)
     slicerTime:SetTextColor(Color(0, 0, 0, 255))
 
-    -- Sets the value whenever the text entry loses focus
-    function slicerTime.OnLoseFocus()
-        enteredSliceDelay = tonumber(slicerTime:GetValue())
-    end
-
     -- Allows the spawner to name the file
     local fileName = vgui.Create("DTextEntry", initialParent)
     fileName:AllowInput(true)
@@ -142,11 +127,6 @@ net.Receive("PlayerSpawnedConsole", function()
     fileName:SetSize(200, 100)
     fileName:SetPos(fileType:GetX(), fileType:GetY() + 100)
     fileName:SetTextColor(Color(0, 0, 0, 255))
-
-    -- Sets the value whenever the text entry loses focus
-    function fileName.OnLoseFocus()
-        enteredFileName = tostring(fileName:GetValue())
-    end
 
 --[[/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     PURPOSE
@@ -162,23 +142,35 @@ net.Receive("PlayerSpawnedConsole", function()
     finishButton:SetPos(fileType:GetX(), fileType:GetY() + 300)
     finishButton:SetText("Done")
     function finishButton.DoClick()
-        if(enteredConsoleName != nil and enteredSliceDelay != nil and isnumber(enteredSliceDelay) and enteredFileName != nil) then -- If all the entries are valid
-            local consoleInformation = {enteredConsoleName, enteredSliceDelay, enteredFileType, enteredFileName, sentConsoleName} -- Create a table with the entries
-            net.Start("AdminFinishedCreation") -- Start the network and send the table
-                net.WriteTable(consoleInformation)
-            net.SendToServer()
-            initialParent:Close() -- Closes the config console
+        -- Read this form at submission time; focus callbacks and globals can
+        -- miss the latest edit or leak values into another console's setup.
+        local enteredConsoleName = consoleNameFrame:GetValue()
+        local enteredSliceDelay = tonumber(slicerTime:GetValue())
+        local enteredFileType = fileType:GetSelected()
+        local enteredFileName = fileName:GetValue()
 
-            if(enteredFileType == "tools") then
-                callingPlayer:ChatPrint("Please type !setEntity when looking at a door to link the console.")
-                net.Start("ServerWaitingForEntity")
-                    net.WriteEntity(callingPlayer)
-                net.SendToServer()
-            end
-
+        -- Match the server's field rules so invalid entries remain editable.
+        -- The server still authenticates the creator and validates the packet.
+        if #enteredConsoleName > 128 or string.Trim(enteredConsoleName) == ""
+            or #enteredFileName > 128 or string.Trim(enteredFileName) == ""
+            or enteredSliceDelay == nil or enteredSliceDelay != enteredSliceDelay
+            or enteredSliceDelay <= 0 or enteredSliceDelay == math.huge
+            or (enteredFileType != "data" and enteredFileType != "server" and enteredFileType != "tools") then
+            callingPlayer:ChatPrint("One or more fields is invalid")
+            return
         end
-        if(enteredConsoleName == nil or enteredSliceDelay == nil or !isnumber(enteredSliceDelay) or enteredFileName == nil) then -- If not all entries are valid
-            callingPlayer:ChatPrint("One or more fields is invalid") -- Alerts the player if a field is wrong
+
+        local consoleInformation = {enteredConsoleName, enteredSliceDelay, enteredFileType, enteredFileName, sentConsoleName}
+        net.Start("AdminFinishedCreation")
+            net.WriteTable(consoleInformation)
+        net.SendToServer()
+        initialParent:Close()
+
+        if enteredFileType == "tools" then
+            callingPlayer:ChatPrint("Please type !setEntity when looking at a door to link the console.")
+            net.Start("ServerWaitingForEntity")
+                net.WriteEntity(callingPlayer)
+            net.SendToServer()
         end
     end
 end)

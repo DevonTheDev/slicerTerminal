@@ -11,6 +11,9 @@ and terminal-driven downloads or door unlocking.
    may submit its initial configuration. Console/file names must be nonblank,
    at most 128 characters, and are normalized to lowercase. The delay must be a
    finite positive number of seconds; the folder is `data`, `server`, or `tools`.
+   **Done** reads the current fields, including the active text entry. Invalid
+   fields keep the form open so they can be corrected; each new form starts
+   without values from previous setups.
 3. For a `tools` terminal, its creator should look at a `func_door` and type
    `!setEntity` in chat before anyone uses that terminal. Each terminal has its
    own door; a door cannot be attached to two live terminals. Set up and link
@@ -64,7 +67,9 @@ Lua 5.1 and newer; the current pass was verified with Lua 5.3 via `texlua`.
 Coverage includes malicious/malformed network requests, concurrent users,
 creator-only setup, stale/deleted entities, independent door links, session
 release, all three successful client command flows, death during countdowns,
-repeated folder navigation, and compilation of all five addon Lua files.
+repeated folder navigation, setup validation and independent/repeated setup
+forms, weapon hold-type initialization, and compilation of all five addon Lua
+files.
 
 The original client source uses CRLF line endings, which this change preserves.
 To check whitespace without treating CRLF as trailing whitespace:
@@ -80,6 +85,11 @@ assets, physics/Use reach, engine networking and multiplayer timing are not
 emulated. Before a live rollout, use a test server to check:
 
 - Spawn/configure one terminal of each type and complete their command flows
+- Edit the final setup field and click Done directly; repeat with a new console
+  and confirm the new form cannot submit values from the previous one
+- Try a blank name/file, missing folder, and nonpositive delay; correct each
+  rejected form and verify it can still configure its terminal
+- Equip the hacking tool and verify its pistol hold animation in multiplayer
 - With two players, confirm only one can enter a terminal at a time
 - Quit, die during login/download, disconnect, and remove an occupied terminal;
   confirm its UI closes and another player can use any surviving terminal

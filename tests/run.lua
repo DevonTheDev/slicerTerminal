@@ -221,6 +221,177 @@ local function openClient(fileType)
     return env
 end
 
+local function openSetup(env, entityName, player)
+    player = player or env.entity("player")
+    player.chats = player.chats or {}
+    function player:ChatPrint(message) table.insert(self.chats, message) end
+    local start = #env.panels
+    env.receive("PlayerSpawnedConsole", nil, player, entityName or "console1")
+    local form, entries = {player = player}, {}
+    for i = start + 1, #env.panels do
+        local panel = env.panels[i]
+        if panel.class == "DFrame" then form.frame = panel
+        elseif panel.class == "DComboBox" then form.folder = panel
+        elseif panel.class == "DButton" then form.done = panel
+        elseif panel.class == "DTextEntry" then entries[#entries + 1] = panel end
+    end
+    form.name, form.delay, form.file = entries[1], entries[2], entries[3]
+    function form:fill(name, delay, folder, file, blur)
+        self.name:SetText(name)
+        self.delay:SetText(delay)
+        self.file:SetText(file)
+        self.folder.selected = folder
+        if self.folder.OnSelect then self.folder:OnSelect() end
+        if blur then
+            for _, entry in ipairs(entries) do
+                if entry.OnLoseFocus then entry:OnLoseFocus() end
+            end
+        end
+    end
+    return form
+end
+
+test("setup submits current fields without requiring focus loss", function()
+    local env = gmod.client()
+    local form = openSetup(env)
+    form:fill("Terminal", "2.5", "data", "Secret", false)
+    form.done:DoClick()
+    local message = assert(env.lastMessage("AdminFinishedCreation"), "No configuration sent")
+    local information = message.values[1]
+    equal(information[1], "Terminal")
+    equal(information[2], 2.5)
+    equal(information[3], "data")
+    equal(information[4], "Secret")
+    equal(information[5], "console1")
+    equal(form.frame.valid, false)
+end)
+
+test("setup uses edits made after the last focus loss", function()
+    local env = gmod.client()
+    local form = openSetup(env)
+    form:fill("Original", "2", "data", "OldFile", true)
+    form:fill("Current", "3", "server", "NewFile", false)
+    form.done:DoClick()
+    local information = assert(env.lastMessage("AdminFinishedCreation")).values[1]
+    equal(information[1], "Current")
+    equal(information[2], 3)
+    equal(information[3], "server")
+    equal(information[4], "NewFile")
+end)
+
+test("a new setup never reuses a completed form's values", function()
+    local env = gmod.client()
+    local first = openSetup(env, "first")
+    first:fill("First", "2", "data", "Secret", true)
+    first.done:DoClick()
+    local messageCount = #env.messages
+    local second = openSetup(env, "second")
+    second.done:DoClick()
+    equal(#env.messages, messageCount, "The blank second form was submitted")
+    equal(second.frame.valid, true)
+    equal(#second.player.chats, 1)
+end)
+
+test("overlapping setup forms keep their own values and console IDs", function()
+    local env = gmod.client()
+    local first, second = openSetup(env, "first"), openSetup(env, "second")
+    first:fill("First", "2", "data", "FirstFile", true)
+    second:fill("Second", "3", "server", "SecondFile", true)
+    first.done:DoClick()
+    local information = assert(env.lastMessage("AdminFinishedCreation")).values[1]
+    equal(information[1], "First")
+    equal(information[2], 2)
+    equal(information[3], "data")
+    equal(information[4], "FirstFile")
+    equal(information[5], "first")
+    equal(second.frame.valid, true)
+    second.done:DoClick()
+    information = env.lastMessage("AdminFinishedCreation").values[1]
+    equal(information[1], "Second")
+    equal(information[4], "SecondFile")
+    equal(information[5], "second")
+end)
+
+for _, invalid in ipairs({
+    {label = "blank name", field = "name", value = ""},
+    {label = "whitespace name", field = "name", value = " \t "},
+    {label = "overlong name", field = "name", value = string.rep("n", 129)},
+    {label = "blank file", field = "file", value = ""},
+    {label = "whitespace file", field = "file", value = " \t "},
+    {label = "overlong file", field = "file", value = string.rep("f", 129)},
+    {label = "blank delay", field = "delay", value = ""},
+    {label = "nonnumeric delay", field = "delay", value = "later"},
+    {label = "zero delay", field = "delay", value = "0"},
+    {label = "negative delay", field = "delay", value = "-1"},
+    {label = "infinite delay", field = "delay", value = "1e309"},
+    {label = "missing folder", field = "folder"},
+    {label = "unknown folder", field = "folder", value = "invalid"},
+}) do
+    test("setup rejects " .. invalid.label .. " without closing", function()
+        local env = gmod.client()
+        local form = openSetup(env)
+        local values = {name = "Terminal", delay = "2", folder = "data", file = "Secret"}
+        values[invalid.field] = invalid.value
+        form:fill(values.name, values.delay, values.folder, values.file, true)
+        form.done:DoClick()
+        equal(#env.messages, 0, "Invalid configuration was sent")
+        equal(form.frame.valid, true)
+        equal(#form.player.chats, 1)
+    end)
+end
+
+test("an invalid setup can be corrected and submitted", function()
+    local env = gmod.client()
+    local form = openSetup(env)
+    form:fill("Terminal", "0", "data", "Secret", true)
+    form.done:DoClick()
+    equal(#env.messages, 0)
+    form.delay:SetText("0.5")
+    form.done:DoClick()
+    equal(env.lastMessage("AdminFinishedCreation").values[1][2], 0.5)
+    equal(form.frame.valid, false)
+end)
+
+for _, folder in ipairs({"data", "server", "tools"}) do
+    test("valid " .. folder .. " setup still satisfies creator-only server validation", function()
+        local server, client = gmod.new(), gmod.client()
+        local owner, attacker = server.player(), server.player()
+        local console = server.console(owner)
+        local form = openSetup(client, console:GetName(), owner)
+        local name, file = string.rep("N", 128), " MixedCase "
+        form:fill(name, "0.5", folder, file, true)
+        form.done:DoClick()
+        local payload = assert(client.lastMessage("AdminFinishedCreation")).values[1]
+        server.receive("AdminFinishedCreation", attacker, payload)
+        equal(console.SlicerInformation, nil)
+        server.receive("AdminFinishedCreation", owner, payload)
+        local info = assert(console.SlicerInformation)
+        equal(info.name, string.lower(name))
+        equal(info.fileName, "mixedcase")
+        equal(info.fileType, folder)
+        equal(info.delay, 0.5)
+        equal(owner.SlicerPendingConsole, folder == "tools" and console or nil)
+        if folder == "tools" then
+            equal(owner.chats[#owner.chats], "Please type !setEntity when looking at a door to link the console.")
+        else
+            equal(#owner.chats, 0)
+        end
+    end)
+end
+
+test("hacking tool initializes its hold type through the inherited engine method", function()
+    local env = gmod.new()
+    local function setHoldType(self, value) self.holdType = value end
+    setmetatable(env.SWEP, {__index = {SetHoldType = setHoldType}})
+    env.include("weapons/weapon_hacking.lua")
+    local weapon = setmetatable({}, {__index = env.SWEP})
+    equal(weapon.SetHoldType, setHoldType, "The engine method was overwritten")
+    assert(type(weapon.Initialize) == "function", "Missing weapon initialization")
+    weapon:Initialize()
+    equal(weapon.holdType, "pistol")
+    equal(weapon:CanPrimaryAttack(), false)
+end)
+
 test("a late death notification with no UI is harmless", function()
     local env = gmod.client()
     env.receive("PlayerDied", nil)
