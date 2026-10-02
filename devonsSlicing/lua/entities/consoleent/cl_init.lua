@@ -608,9 +608,8 @@ local filenames = {
                                            net.WriteEntity(usedConsole) -- Allows us to delete the console on server side
                                        net.SendToServer()
 
-                                       for k, v in pairs(player.GetAll()) do
-                                           chat.AddText(Color(255, 251, 0), "[" .. string.upper(consoleInfo["name"]) .. "]: ", Color(255, 255, 255, 255), callingPlayer:GetName() .. " has downloaded '" .. consoleInfo["fileName"] .. ".data'")
-                                       end
+                                       -- chat.AddText already targets the local player.
+                                       chat.AddText(Color(255, 251, 0), "[" .. string.upper(consoleInfo["name"]) .. "]: ", Color(255, 255, 255, 255), callingPlayer:GetName() .. " has downloaded '" .. consoleInfo["fileName"] .. ".data'")
                                    end)
                                    hook.Add("Think", "downloadDataFile", function()
                                        if(timer.Exists("DownloadDataFile")) then
@@ -789,9 +788,8 @@ local filenames = {
                                            net.WriteEntity(usedConsole) -- Allows us to delete the console on server side
                                        net.SendToServer()
 
-                                       for k, v in pairs(player.GetAll()) do
-                                           chat.AddText(Color(255, 251, 0), "[" .. string.upper(consoleInfo["name"]) .. "]: ", Color(255, 255, 255, 255), callingPlayer:GetName() .. " has downloaded '" .. consoleInfo["fileName"] .. ".sys'")
-                                       end
+                                       -- chat.AddText already targets the local player.
+                                       chat.AddText(Color(255, 251, 0), "[" .. string.upper(consoleInfo["name"]) .. "]: ", Color(255, 255, 255, 255), callingPlayer:GetName() .. " has downloaded '" .. consoleInfo["fileName"] .. ".sys'")
                                    end)
                                    hook.Add("Think", "downloadServerFile", function()
                                        if(timer.Exists("DownloadServerFile")) then
@@ -969,9 +967,8 @@ local filenames = {
                                        net.WriteEntity(usedConsole) -- Allows us to delete the console on server side
                                    net.SendToServer()
 
-                                   for k, v in pairs(player.GetAll()) do
-                                       chat.AddText(Color(255, 251, 0), "[" .. string.upper(consoleInfo["name"]) .. "]: ", Color(255, 255, 255, 255), callingPlayer:GetName() .. " has executed '" .. consoleInfo["fileName"] .. ".exe'")
-                                   end
+                                   -- chat.AddText already targets the local player.
+                                   chat.AddText(Color(255, 251, 0), "[" .. string.upper(consoleInfo["name"]) .. "]: ", Color(255, 255, 255, 255), callingPlayer:GetName() .. " has executed '" .. consoleInfo["fileName"] .. ".exe'")
                                    return
                                end
                            end

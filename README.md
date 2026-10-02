@@ -34,7 +34,8 @@ For a terminal named `terminal` and file named `secret`:
 
 Downloads take the configured login delay plus a second download delay. Tools
 require the login delay. Successful completion consumes the terminal. Removing
-or completing a linked terminal unlocks its own door.
+or completing a linked terminal unlocks its own door. Completion feedback appears
+once in the local player's chat, regardless of the number of connected players.
 
 ## Session and network safety
 
@@ -68,7 +69,8 @@ Coverage includes malicious/malformed network requests, concurrent users,
 creator-only setup, stale/deleted entities, independent door links, session
 release, all three successful client command flows, death during countdowns,
 repeated folder navigation, setup validation and independent/repeated setup
-forms, weapon hold-type initialization, and compilation of all five addon Lua
+forms, weapon hold-type initialization, single completion feedback with 1, 2,
+and 12 connected players, and compilation of all five addon Lua
 files.
 
 The original client source uses CRLF line endings, which this change preserves.

@@ -218,7 +218,7 @@ local function openClient(fileType)
     local player = env.entity("player")
     env.receive("ServerSendsEntityInformation", nil, env.entity("consoleent"), player,
         {name = "terminal", delay = 2, fileType = fileType or "data", fileName = "secret", inUse = false}, "console1")
-    return env
+    return env, player
 end
 
 local function openSetup(env, entityName, player)
@@ -434,6 +434,35 @@ for _, kind in ipairs({{folder = "data", extension = "data", timer = "DownloadDa
     end)
 end
 
+for _, kind in ipairs({{folder = "data", extension = "data", timer = "DownloadDataFile", verb = "downloaded"}, {folder = "server", extension = "sys", timer = "DownloadServerFile", verb = "downloaded"}, {folder = "tools", extension = "exe", verb = "executed"}}) do
+    for _, playerCount in ipairs({1, 2, 12}) do
+        test(kind.folder .. " completion prints once with " .. playerCount .. " connected players", function()
+            local env, caller = openClient(kind.folder)
+            env.player.GetAll = function()
+                local players = {}
+                for i = 1, playerCount do players[i] = i end
+                return players
+            end
+            env.command("/a[terminal]")
+            env.fireTimer("AccessDelay")
+            env.command("/a[terminal]/{_" .. kind.folder .. "}")
+            equal(#env.chatMessages, 0, "Completion was announced before the action")
+            env.command((kind.timer and "/d" or "/r") .. "{_" .. kind.folder .. "}/secret." .. kind.extension)
+            if kind.timer then
+                equal(#env.chatMessages, 0, "Download was announced before its timer completed")
+                env.fireTimer(kind.timer)
+            end
+            equal(#env.chatMessages, 1, "Completion feedback must be local and independent of server population")
+            local message = env.chatMessages[1]
+            equal(message[2], "[TERMINAL]: ")
+            equal(message[4], caller:GetName() .. " has " .. kind.verb .. " 'secret." .. kind.extension .. "'")
+            equal(message[1][1], 255); equal(message[1][2], 251); equal(message[1][3], 0)
+            equal(message[3][1], 255); equal(message[3][2], 255); equal(message[3][3], 255); equal(message[3][4], 255)
+            env.assertClosed()
+        end)
+    end
+end
+
 for _, kind in ipairs({{folder = "data", extension = "data", timer = "DownloadDataFile"}, {folder = "server", extension = "sys", timer = "DownloadServerFile"}}) do
     test("death during " .. kind.folder .. " download cancels completion", function()
         local env = openClient(kind.folder)
@@ -444,6 +473,7 @@ for _, kind in ipairs({{folder = "data", extension = "data", timer = "DownloadDa
         env.receive("PlayerDied", nil)
         env.assertClosed()
         equal(env.lastMessage("destroyOnServer"), nil)
+        equal(#env.chatMessages, 0, "Canceled downloads must not announce completion")
     end)
 end
 

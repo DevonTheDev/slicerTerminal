@@ -198,7 +198,8 @@ function M.client()
     env.Color = function(...) return {...} end
     env.ScrW, env.ScrH = function() return 1920 end, function() return 1080 end
     env.player = {GetAll = function() return {1} end}
-    env.chat = {AddText = function() end}
+    env.chatMessages = {}
+    env.chat = {AddText = function(...) table.insert(env.chatMessages, {...}) end}
     env.table.RemoveByValue = function(values, value)
         for i, entry in ipairs(values) do if entry == value then return table.remove(values, i) end end
     end
