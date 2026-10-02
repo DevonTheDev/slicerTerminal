@@ -24,3 +24,7 @@ end
 function SWEP:CanPrimaryAttack()
     return false
 end
+
+function SWEP:CanSecondaryAttack()
+    return false
+end

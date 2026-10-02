@@ -18,7 +18,8 @@ and terminal-driven downloads or door unlocking.
    `!setEntity` in chat before anyone uses that terminal. Each terminal has its
    own door; a door cannot be attached to two live terminals. Set up and link
    tools terminals one at a time for each creator.
-4. Equip **Devons Hacking Tool** and use the console.
+4. Equip **Devons Hacking Tool** and use the console. Primary and secondary
+   attack are disabled; right-click must not fire the inherited base weapon.
 
 For a terminal named `terminal` and file named `secret`:
 
@@ -69,7 +70,7 @@ Coverage includes malicious/malformed network requests, concurrent users,
 creator-only setup, stale/deleted entities, independent door links, session
 release, all three successful client command flows, death during countdowns,
 repeated folder navigation, setup validation and independent/repeated setup
-forms, weapon hold-type initialization, single completion feedback with 1, 2,
+forms, weapon hold-type initialization, disabled primary/secondary attacks, single completion feedback with 1, 2,
 and 12 connected players, and compilation of all five addon Lua
 files.
 
@@ -91,7 +92,8 @@ emulated. Before a live rollout, use a test server to check:
   and confirm the new form cannot submit values from the previous one
 - Try a blank name/file, missing folder, and nonpositive delay; correct each
   rejected form and verify it can still configure its terminal
-- Equip the hacking tool and verify its pistol hold animation in multiplayer
+- Equip the hacking tool and verify its pistol hold animation in multiplayer;
+  with ammunition available, check that left/right-click do not fire or consume it
 - With two players, confirm only one can enter a terminal at a time
 - Quit, die during login/download, disconnect, and remove an occupied terminal;
   confirm its UI closes and another player can use any surviving terminal

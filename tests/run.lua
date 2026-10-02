@@ -397,6 +397,38 @@ test("a late death notification with no UI is harmless", function()
     env.receive("PlayerDied", nil)
 end)
 
+-- The official weapon_base routes SecondaryAttack through CanSecondaryAttack:
+-- https://github.com/Facepunch/garrysmod/blob/master/garrysmod/gamemodes/base/entities/weapons/weapon_base/shared.lua
+-- This local inheritance boundary records the effects rather than firing real
+-- bullets. Engine prediction, animations and damage remain smoke-test scope.
+for _, clip in ipairs({8, 0}) do
+    test("the hacking tool blocks inherited secondary attack with clip " .. clip, function()
+        local env = gmod.new()
+        local base = {}
+        function base:CanSecondaryAttack()
+            if self.clip <= 0 then
+                self.emptySounds = self.emptySounds + 1
+                return false
+            end
+            return true
+        end
+        function base:SecondaryAttack()
+            if not self:CanSecondaryAttack() then return end
+            self.shots = self.shots + 1
+            self.clip = self.clip - 1
+        end
+        setmetatable(env.SWEP, {__index = base})
+        env.include("weapons/weapon_hacking.lua")
+        local weapon = setmetatable({clip = clip, shots = 0, emptySounds = 0}, {__index = env.SWEP})
+        for _ = 1, 3 do weapon:SecondaryAttack() end
+        equal(weapon.shots, 0, "A utility tool must not inherit gunfire")
+        equal(weapon.clip, clip, "Right-click must not consume ammunition")
+        equal(weapon.emptySounds, 0, "Right-click must not use the gun's empty-clip path")
+        equal(weapon:CanSecondaryAttack(), false)
+        equal(weapon:CanPrimaryAttack(), false)
+    end)
+end
+
 test("death during login cancels the access timer and all UI", function()
     local env = openClient()
     env.command("/a[terminal]")
