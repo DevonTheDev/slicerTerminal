@@ -1,9 +1,102 @@
 include("entities/consoleent/shared.lua")
 
+local COMMAND_PROMPT = "Run commands here... (/help | Up/Down history)"
+local commandHelpFrame, commandHelpOwner
+
+local function closeCommandHelp()
+    if IsValid(commandHelpFrame) then commandHelpFrame:Remove() end
+    commandHelpFrame, commandHelpOwner = nil, nil
+end
+
+local function terminalCommands(info, stage)
+    local commands = {}
+    local function add(command, description)
+        commands[#commands + 1] = {command, description}
+    end
+    if stage == "login" then
+        add("/a[" .. info.name .. "]", "Log in to this terminal")
+        add("/q[" .. info.name .. "]", "Quit this terminal")
+    elseif stage == "folders" then
+        for _, folder in ipairs({"data", "server", "tools"}) do
+            add("/a[" .. info.name .. "]/{_" .. folder .. "}", "Open the " .. folder .. " folder")
+        end
+        add("/q[" .. info.name .. "]", "Quit this terminal")
+    else
+        add("//[" .. info.name .. "]/{_" .. stage .. "}", "Return to folder selection")
+        if info.fileType == stage then
+            local extensions = {data = "data", server = "sys", tools = "exe"}
+            local prefix = stage == "tools" and "/r" or "/d"
+            add(prefix .. "{_" .. stage .. "}/" .. info.fileName .. "." .. extensions[stage],
+                stage == "tools" and "Run the door tool" or "Download the target file")
+        end
+    end
+    add("/help", "Show these commands. Up/Down recalls this terminal's last 20 submissions.")
+    return commands
+end
+
+local function configureCommandAssistance(input, parent, info, stage, history)
+    input:SetHistoryEnabled(true)
+    input.History = history
+    input.HistoryPos = 0
+    local commands = terminalCommands(info, stage)
+    input.ShowCommandHelp = function()
+        if not IsValid(input) or not IsValid(parent) then return end
+        if IsValid(commandHelpFrame) and commandHelpOwner == input then
+            commandHelpFrame:MakePopup()
+            return
+        end
+        closeCommandHelp()
+        commandHelpOwner = input
+        commandHelpFrame = vgui.Create("DFrame", parent)
+        commandHelpFrame:SetSize(math.min(760, ScrW() - 40), math.min(420, ScrH() - 60))
+        commandHelpFrame:Center()
+        commandHelpFrame:SetTitle("Commands - " .. info.name .. " / " .. stage)
+        commandHelpFrame:SetDeleteOnClose(true)
+        commandHelpFrame:ShowCloseButton(true)
+        commandHelpFrame:MakePopup()
+        local scroll = vgui.Create("DScrollPanel", commandHelpFrame)
+        scroll:Dock(FILL)
+        for _, command in ipairs(commands) do
+            local label = scroll:Add("DLabel")
+            label:Dock(TOP)
+            label:DockMargin(12, 6, 12, 8)
+            label:SetFont("HackingFont")
+            label:SetTextColor(Color(220, 220, 220, 255))
+            label:SetWrap(true)
+            label:SetAutoStretchVertical(true)
+            label:SetText(command[1] .. "\n" .. command[2])
+        end
+    end
+    local button = vgui.Create("DButton", parent)
+    button:SetSize(160, 30)
+    button:SetPos(5, ScrH() - 140)
+    button:SetText("Commands (/help)")
+    button.DoClick = input.ShowCommandHelp
+end
+
+local function handleCommandAssistance(input)
+    if not IsValid(input) then return true end
+    local value = input:GetValue()
+    if string.Trim(value) ~= "" and #value <= 512 then
+        input:AddHistory(value)
+        while #input.History > 20 do table.remove(input.History, 1) end
+    end
+    if string.lower(string.Trim(value)) == "/help" then
+        input.ShowCommandHelp()
+        input:SetText("")
+        input:SetPlaceholderText(COMMAND_PROMPT)
+        input:SetPlaceholderColor(Color(140, 140, 140, 220))
+        return true
+    end
+    closeCommandHelp()
+    return false
+end
+
 -- A terminal has several independent frames, timers and Think hooks. Tear all
 -- of them down together so death, quitting and completion cannot leave a timer
 -- reopening a closed terminal or updating a removed panel.
 local function closeConsoleUI()
+    closeCommandHelp()
     for _, panel in pairs({firstPage, secondPage, insideData, insideServer, insideTools}) do
         if IsValid(panel) then panel:Remove() end
     end
@@ -198,6 +291,7 @@ net.Receive("ServerSendsEntityInformation", function() -- Frames open
     local callingPlayer = net.ReadEntity()
 
     local consoleInfo = net.ReadTable()
+    local commandHistory = {} -- Shared across this terminal only, never a later session.
     --[[
     Output of this table is
     name
@@ -295,19 +389,21 @@ if(!consoleInfo["inUse"]) then
    -- Creates the access terminal
    local inputTerminal1 = vgui.Create("DTextEntry", firstPage)
    inputTerminal1:SetFont("HackingFont")
-   inputTerminal1:SetPlaceholderText("Run Commands Here...")
+   inputTerminal1:SetPlaceholderText(COMMAND_PROMPT)
    inputTerminal1:SetPlaceholderColor(Color(140, 140, 140, 220))
    inputTerminal1:SetSize(ScrW(), 100)
    inputTerminal1:SetPos(5, ScrH()-100)
    inputTerminal1:SetTextColor(Color(36, 209, 36, 255))
    inputTerminal1:SetPaintBackground(false)
    inputTerminal1:SetCursorColor(Color(36, 209, 36, 255))
+   configureCommandAssistance(inputTerminal1, firstPage, consoleInfo, "login", commandHistory)
 
    inputTerminal1.OnGetFocus = function(self) -- Clears the text when the player clicks on the box
        self:SetPlaceholderText("")
    end
    
    function inputTerminal1:OnEnter()
+       if handleCommandAssistance(inputTerminal1) then return end
 
     surface.PlaySound("code_enter.wav")
 
@@ -416,24 +512,26 @@ This code sets up the second page of the console
                -- Creates the access terminal
                local inputTerminal2 = vgui.Create("DTextEntry", secondPage)
                inputTerminal2:SetFont("HackingFont")
-               inputTerminal2:SetPlaceholderText("Run Commands Here...")
+               inputTerminal2:SetPlaceholderText(COMMAND_PROMPT)
                inputTerminal2:SetPlaceholderColor(Color(140, 140, 140, 220))
                inputTerminal2:SetSize(ScrW(), 100)
                inputTerminal2:SetPos(5, ScrH()-100)
                inputTerminal2:SetTextColor(Color(36, 209, 36, 255))
                inputTerminal2:SetPaintBackground(false)
                inputTerminal2:SetCursorColor(Color(36, 209, 36, 255))
+               configureCommandAssistance(inputTerminal2, secondPage, consoleInfo, "folders", commandHistory)
 
                inputTerminal2.OnGetFocus = function(self) -- Clears the text when the player clicks on the box
                    self:SetPlaceholderText("")
                end
 
                inputTerminal2.OnLoseFocus = function(self)
-                   self:SetPlaceholderText("Run Commands Here...")
+                   self:SetPlaceholderText(COMMAND_PROMPT)
                    self:SetPlaceholderColor(Color(140, 140, 140, 220))
                end
                
                function inputTerminal2:OnEnter()
+                   if handleCommandAssistance(inputTerminal2) then return end
 
                 surface.PlaySound("code_enter.wav")
 --[[/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -563,24 +661,26 @@ local filenames = {
                        -- Creates the access terminal
                        local dataInputTerminal = vgui.Create("DTextEntry", insideData)
                        dataInputTerminal:SetFont("HackingFont")
-                       dataInputTerminal:SetPlaceholderText("Run Commands Here...")
+                       dataInputTerminal:SetPlaceholderText(COMMAND_PROMPT)
                        dataInputTerminal:SetPlaceholderColor(Color(140, 140, 140, 220))
                        dataInputTerminal:SetSize(ScrW(), 100)
                        dataInputTerminal:SetPos(5, ScrH()-100)
                        dataInputTerminal:SetTextColor(Color(36, 209, 36, 255))
                        dataInputTerminal:SetPaintBackground(false)
                        dataInputTerminal:SetCursorColor(Color(36, 209, 36, 255))
+                       configureCommandAssistance(dataInputTerminal, insideData, consoleInfo, "data", commandHistory)
 
                        dataInputTerminal.OnGetFocus = function(self) -- Clears the text when the player clicks on the box
                            self:SetPlaceholderText("")
                        end
 
                        dataInputTerminal.OnLoseFocus = function(self)
-                           self:SetPlaceholderText("Run Commands Here...")
+                           self:SetPlaceholderText(COMMAND_PROMPT)
                            self:SetPlaceholderColor(Color(140, 140, 140, 220))
                        end
 
                        function dataInputTerminal.OnEnter()
+                           if handleCommandAssistance(dataInputTerminal) then return end
 
                             surface.PlaySound("code_enter.wav")
 
@@ -591,7 +691,7 @@ local filenames = {
                                timer.Remove("dataPageReturn")
 
                                -- Resets the input terminal
-                               inputTerminal2:SetPlaceholderText("Run Commands Here...")
+                               inputTerminal2:SetPlaceholderText(COMMAND_PROMPT)
                                inputTerminal2:SetPlaceholderColor(Color(140, 140, 140, 220))
                                inputTerminal2:SetText("")
                                inputTerminal2:SetTextColor(Color(36, 209, 36, 255))
@@ -741,24 +841,26 @@ local filenames = {
                        -- Creates the access terminal
                        local serverInputTerminal = vgui.Create("DTextEntry", insideServer)
                        serverInputTerminal:SetFont("HackingFont")
-                       serverInputTerminal:SetPlaceholderText("Run Commands Here...")
+                       serverInputTerminal:SetPlaceholderText(COMMAND_PROMPT)
                        serverInputTerminal:SetPlaceholderColor(Color(140, 140, 140, 220))
                        serverInputTerminal:SetSize(ScrW(), 100)
                        serverInputTerminal:SetPos(5, ScrH()-100)
                        serverInputTerminal:SetTextColor(Color(36, 209, 36, 255))
                        serverInputTerminal:SetPaintBackground(false)
                        serverInputTerminal:SetCursorColor(Color(36, 209, 36, 255))
+                       configureCommandAssistance(serverInputTerminal, insideServer, consoleInfo, "server", commandHistory)
 
                        serverInputTerminal.OnGetFocus = function(self) -- Clears the text when the player clicks on the box
                            self:SetPlaceholderText("")
                        end
 
                        serverInputTerminal.OnLoseFocus = function(self)
-                           self:SetPlaceholderText("Run Commands Here...")
+                           self:SetPlaceholderText(COMMAND_PROMPT)
                            self:SetPlaceholderColor(Color(140, 140, 140, 220))
                        end
 
                        function serverInputTerminal.OnEnter()
+                           if handleCommandAssistance(serverInputTerminal) then return end
 
                         surface.PlaySound("code_enter.wav")
 
@@ -769,7 +871,7 @@ local filenames = {
                                timer.Remove("dataPageReturn")
 
                                -- Resets the input terminal
-                               inputTerminal2:SetPlaceholderText("Run Commands Here...")
+                               inputTerminal2:SetPlaceholderText(COMMAND_PROMPT)
                                inputTerminal2:SetPlaceholderColor(Color(140, 140, 140, 220))
                                inputTerminal2:SetText("")
                                inputTerminal2:SetTextColor(Color(36, 209, 36, 255))
@@ -919,24 +1021,26 @@ local filenames = {
                        -- Creates the access terminal
                        local toolsInputTerminal = vgui.Create("DTextEntry", insideTools)
                        toolsInputTerminal:SetFont("HackingFont")
-                       toolsInputTerminal:SetPlaceholderText("Run Commands Here...")
+                       toolsInputTerminal:SetPlaceholderText(COMMAND_PROMPT)
                        toolsInputTerminal:SetPlaceholderColor(Color(140, 140, 140, 220))
                        toolsInputTerminal:SetSize(ScrW(), 100)
                        toolsInputTerminal:SetPos(5, ScrH()-100)
                        toolsInputTerminal:SetTextColor(Color(36, 209, 36, 255))
                        toolsInputTerminal:SetPaintBackground(false)
                        toolsInputTerminal:SetCursorColor(Color(36, 209, 36, 255))
+                       configureCommandAssistance(toolsInputTerminal, insideTools, consoleInfo, "tools", commandHistory)
 
                        toolsInputTerminal.OnGetFocus = function(self) -- Clears the text when the player clicks on the box
                            self:SetPlaceholderText("")
                        end
 
                        toolsInputTerminal.OnLoseFocus = function(self)
-                           self:SetPlaceholderText("Run Commands Here...")
+                           self:SetPlaceholderText(COMMAND_PROMPT)
                            self:SetPlaceholderColor(Color(140, 140, 140, 220))
                        end
 
                        function toolsInputTerminal.OnEnter()
+                           if handleCommandAssistance(toolsInputTerminal) then return end
 
                         surface.PlaySound("code_enter.wav")
 
@@ -947,7 +1051,7 @@ local filenames = {
                                timer.Remove("dataPageReturn")
 
                                -- Resets the input terminal
-                               inputTerminal2:SetPlaceholderText("Run Commands Here...")
+                               inputTerminal2:SetPlaceholderText(COMMAND_PROMPT)
                                inputTerminal2:SetPlaceholderColor(Color(140, 140, 140, 220))
                                inputTerminal2:SetText("")
                                inputTerminal2:SetTextColor(Color(36, 209, 36, 255))

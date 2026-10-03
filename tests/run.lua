@@ -548,6 +548,7 @@ test("all five addon Lua files compile with GLua syntax translation", function()
 end)
 
 dofile("tests/completion.lua")(gmod, test, equal)
+dofile("tests/command-assistance.lua")(gmod, test, equal)
 
 print(string.format("\n%d passed, %d failed", passed, failed))
 if failed > 0 then os.exit(1) end

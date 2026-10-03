@@ -194,6 +194,8 @@ end
 function M.client()
     local env = M.new()
     env.ENT, env.receivers, env.hooks, env.panels, env.timers = {}, {}, {}, {}, {}
+    env.timerEvents, env.historyCalls = {}, {}
+    env.FILL, env.TOP = 5, 1
     env.surface = {CreateFont = function() end, PlaySound = function() end}
     env.Color = function(...) return {...} end
     env.ScrW, env.ScrH = function() return 1920 end, function() return 1080 end
@@ -206,11 +208,21 @@ function M.client()
     env.math = setmetatable({Round = function(value) return value end}, {__index = math})
     env.timer = {}
     function env.timer.Create(name, delay, repeats, callback)
-        env.timers[name] = {delay = delay, callback = callback}
+        table.insert(env.timerEvents, {operation = "Create", name = name})
+        env.timers[name] = {delay = delay, repeats = repeats, callback = callback}
     end
-    function env.timer.Remove(name) env.timers[name] = nil end
-    function env.timer.Stop(name) if env.timers[name] then env.timers[name].stopped = true end end
-    function env.timer.Start(name) if env.timers[name] then env.timers[name].stopped = false end end
+    function env.timer.Remove(name)
+        table.insert(env.timerEvents, {operation = "Remove", name = name})
+        env.timers[name] = nil
+    end
+    function env.timer.Stop(name)
+        table.insert(env.timerEvents, {operation = "Stop", name = name})
+        if env.timers[name] then env.timers[name].stopped = true end
+    end
+    function env.timer.Start(name)
+        table.insert(env.timerEvents, {operation = "Start", name = name})
+        if env.timers[name] then env.timers[name].stopped = false end
+    end
     function env.timer.Exists(name) return env.timers[name] ~= nil end
     function env.timer.TimeLeft(name) return env.timers[name].delay end
     function env.fireTimer(name)
@@ -222,11 +234,39 @@ function M.client()
     env.vgui = {}
     function env.vgui.Create(class, parent)
         local panel = {valid = true, class = class, parent = parent, text = "", children = {}}
+        if class == "DTextEntry" then panel.History = {}; panel.HistoryPos = 0 end
         if parent then table.insert(parent.children, panel) end
         for _, name in ipairs({"SetSize", "Center", "ShowCloseButton", "MakePopup", "SetTitle", "SetDeleteOnClose", "SetDraggable", "SetFont", "SetPlaceholderText", "SetPlaceholderColor", "SetPos", "SetTextColor", "SetEditable", "SetPaintBackground", "SetCursorColor", "SetContentAlignment", "MoveTo", "SetImage", "AllowInput", "AddChoice"}) do
             panel[name] = function(self, ...) assert(self.valid, name .. " on removed panel") end
         end
         function panel:SetText(value) assert(self.valid, "SetText on removed panel"); self.text = value end
+        function panel:SetTitle(value) assert(self.valid, "SetTitle on removed panel"); self.title = value end
+        function panel:SetPlaceholderText(value) assert(self.valid, "SetPlaceholderText on removed panel"); self.placeholder = value end
+        function panel:SetHistoryEnabled(value) assert(self.valid, "SetHistoryEnabled on removed panel"); self.historyEnabled = value end
+        -- Only the documented data contract is modeled here. Actual native
+        -- Up/Down key dispatch, focus, scrolling and rendering need a game test.
+        -- AddHistory removes an exact duplicate, then appends the submitted text:
+        -- https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/dtextentry.lua
+        function panel:AddHistory(value)
+            assert(self.valid, "AddHistory on removed panel")
+            table.insert(env.historyCalls, {panel = self, text = value})
+            if not value or value == "" then return end
+            env.table.RemoveByValue(self.History, value)
+            table.insert(self.History, value)
+        end
+        function panel:Add(childClass) assert(self.valid, "Add on removed panel"); return env.vgui.Create(childClass, self) end
+        function panel:Dock(value) assert(self.valid, "Dock on removed panel"); self.dock = value end
+        function panel:DockMargin(...) assert(self.valid, "DockMargin on removed panel"); self.dockMargin = {...} end
+        function panel:SetWrap(value) assert(self.valid, "SetWrap on removed panel"); self.wrap = value end
+        function panel:SetAutoStretchVertical(value) assert(self.valid, "SetAutoStretchVertical on removed panel"); self.autoStretchVertical = value end
+        function panel:IsVisible()
+            local ancestor = self
+            while ancestor do
+                if not ancestor.valid or ancestor.hidden then return false end
+                ancestor = ancestor.parent
+            end
+            return true
+        end
         function panel:GetValue() assert(self.valid, "GetValue on removed panel"); return self.text end
         function panel:GetSelected() return self.selected end
         function panel:GetX() return 0 end

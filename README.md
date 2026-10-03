@@ -35,6 +35,25 @@ For a terminal named `terminal` and file named `secret`:
 | Run a door tool | `/r{_tools}/secret.exe` |
 | Quit from login/folder selection | `/q[terminal]` |
 
+### Command assistance
+
+Click **Commands (/help)** or enter `/help` to open a scrollable reference for
+the current terminal screen. The reference fills in that terminal's real name
+and filename. A folder only offers a download or tool command when it contains
+the target file; every folder includes its return command. Help can be closed
+without quitting, and it does not submit an action or bypass a countdown.
+
+Use the Up and Down arrows in the command entry to recall recent submissions
+and correct a typo. The last 20 distinct submissions are shared across the
+current terminal's screens and cleared for a new terminal session. Blank entries
+and entries longer than 512 bytes are not retained. This uses Garry's Mod's
+documented [text-entry history](https://wiki.facepunch.com/gmod/DTextEntry%3ASetHistoryEnabled)
+and [AddHistory](https://wiki.facepunch.com/gmod/DTextEntry%3AAddHistory) support.
+
+The Commands window belongs to its terminal page and closes when that page or
+session closes. Commands still run through the existing command handlers and
+server checks; help and history do not automatically execute a recalled command.
+
 Downloads take the configured login delay plus a second download delay. Tools
 require the login delay. Successful completion consumes the terminal. Removing
 or completing a linked terminal unlocks its own door. Completion feedback appears
@@ -82,6 +101,11 @@ the callable death-drop hook, single completion feedback with 1, 2,
 and 12 connected players, and compilation of all five addon Lua
 files.
 
+Command-assistance tests run the actual client callbacks for every folder/target
+combination, bounded per-terminal history, help dismissal/retirement and the
+unchanged client-to-server completion flows. They check the documented history
+API and data contract, not native arrow-key dispatch or Derma rendering.
+
 The original client source uses CRLF line endings, which this change preserves.
 To check whitespace without treating CRLF as trailing whitespace:
 
@@ -111,6 +135,9 @@ emulated. Before a live rollout, use a test server to check:
   confirm no success is printed, the terminal remains available and another
   player can use it. Re-equip and retry normally
 - Enter a folder, return, and re-enter several times; check for Lua errors
+- Open Commands or type `/help` at each stage; close help and finish normally.
+  Recall and edit a command with Up/Down, then quit and open a new terminal to
+  verify history is fresh. Check help wrapping and scrolling with long names
 - Link two tools terminals to different doors; finishing one must leave the
   other door locked, and using unrelated entities must still work
 - Check fonts, sounds and layouts at the clients' screen resolutions
