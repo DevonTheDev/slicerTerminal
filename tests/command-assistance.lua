@@ -17,14 +17,19 @@ return function(gmod, test, equal)
     local function activeEntry(env)
         for i = #env.panels, 1, -1 do
             local panel = env.panels[i]
-            if panel:IsVisible() and panel.OnEnter then return panel end
+            local visible, ancestor = true, panel
+            while ancestor do
+                if not ancestor.valid or ancestor:IsMarkedForDeletion() or not ancestor:IsVisible() then visible = false end
+                ancestor = ancestor.parent
+            end
+            if visible and panel.OnEnter then return panel end
         end
         error("Missing active command entry")
     end
     local function helpWindows(env)
         local found = {}
         for _, panel in ipairs(env.panels) do
-            if panel.valid and panel.class == "DFrame" and (panel.title or ""):match("^Commands") then found[#found + 1] = panel end
+            if panel.valid and not panel:IsMarkedForDeletion() and panel:IsVisible() and panel.class == "DFrame" and (panel.title or ""):match("^Commands") then found[#found + 1] = panel end
         end
         return found
     end
@@ -366,6 +371,364 @@ return function(gmod, test, equal)
             server.receive(packet.name, hacker, unpackValues(packet.values))
             equal(info.inUse, false); equal(console.removed, true)
             equal(server.lastMessage("SlicerCompleted").player, hacker)
+            client.assertClosed()
+        end)
+    end
+
+    local function insertionRows(help)
+        local _, scroll = helpText(help)
+        local rows, label = {}, nil
+        contains(helpText(help), "Insert replaces the current draft. Press Enter to run.")
+        for _, child in ipairs(scroll.children) do
+            if child.class == "DLabel" and child.text:sub(1, 1) == "/" then
+                assert(not label, "Every command label needs its own insertion button")
+                label = child
+            elseif child.class == "DLabel" then
+                equal(child.text, "Insert replaces the current draft. Press Enter to run.")
+                equal(child.wrap, true)
+                equal(child.autoStretchVertical, true)
+            elseif child.class == "DButton" then
+                assert(label, "Insertion button must follow its command label")
+                equal(child.text, "Insert command", "Insertion action needs a short explicit label")
+                equal(child.dock, 1, "Insertion buttons must stack beneath their wrapped labels")
+                assert(child.height and child.height >= 24, "Insertion buttons need a usable height")
+                rows[#rows + 1] = {command = label.text:match("^([^\n]+)"), button = child}
+                label = nil
+            end
+        end
+        assert(not label, "Missing Insert command button beneath the last command label")
+        assert(#rows > 0, "Missing explicit Insert command actions")
+        return rows
+    end
+    local function findInsertion(help, command)
+        for _, row in ipairs(insertionRows(help)) do
+            if row.command == command then return row.button end
+        end
+        error("Missing Insert command action for " .. command)
+    end
+    local function snapshot(env, entry)
+        return {text = entry.text, position = entry.HistoryPos, history = table.concat(entry.History, "\n"),
+            sent = #env.messages, timers = #env.timerEvents, historyCalls = #env.historyCalls,
+            focusCalls = #env.focusCalls, caretCalls = #env.caretCalls, caret = entry.caret}
+    end
+    local function unchanged(env, entry, before)
+        equal(entry.text, before.text, "Blocked insertion replaced the draft")
+        equal(entry.HistoryPos, before.position, "Blocked insertion moved history")
+        equal(entry.caret, before.caret, "Blocked insertion moved the caret")
+        equal(#env.focusCalls, before.focusCalls, "Blocked insertion requested focus")
+        equal(#env.caretCalls, before.caretCalls, "Blocked insertion called SetCaretPos")
+        equal(table.concat(entry.History, "\n"), before.history, "Blocked insertion changed history")
+        equal(#env.historyCalls, before.historyCalls)
+        equal(#env.messages, before.sent, "Blocked insertion sent a packet")
+        equal(#env.timerEvents, before.timers, "Blocked insertion changed timers")
+    end
+    local function insertCommand(env, command, caret)
+        local entry = activeEntry(env)
+        entry:SetText("unfinished draft")
+        entry.HistoryPos = 3
+        helpButton(env, entry.parent):DoClick()
+        local help = assert(helpWindows(env)[1])
+        local button = findInsertion(help, command)
+        equal(button.enabled, true, "A live command input should allow explicit insertion")
+        local before = snapshot(env, entry)
+        button:DoClick()
+        equal(entry:GetValue(), command, "Insertion must replace the whole draft with this exact command")
+        equal(entry.HistoryPos, 0, "Insertion must exit history navigation")
+        equal(entry.caret, caret or #command, "Caret must end at the command's character count")
+        equal(#env.caretCalls, before.caretCalls + 1)
+        equal(env.caretCalls[#env.caretCalls].panel, entry)
+        equal(#env.focusCalls, before.focusCalls + 1)
+        equal(env.focusedPanel, entry)
+        equal(help:IsMarkedForDeletion(), true, "Insertion must close its help before returning to typing")
+        equal(#helpWindows(env), 0)
+        equal(activeEntry(env), entry, "Insertion executed a stage transition before Enter")
+        equal(entry.parent.valid, true)
+        equal(table.concat(entry.History, "\n"), before.history)
+        equal(#env.historyCalls, before.historyCalls, "Only Enter may add inserted text to history")
+        equal(#env.messages, before.sent, "Insertion must not send a packet")
+        equal(#env.timerEvents, before.timers, "Insertion must not change a timer")
+        return entry, button
+    end
+
+    for _, stage in ipairs({"login", "folders", "data", "server", "tools"}) do
+        local targets = (stage == "login" or stage == "folders") and {kinds[1]} or kinds
+        for _, target in ipairs(targets) do
+            test(stage .. " insertion offers exactly its contextual commands for a " .. target.folder .. " target", function()
+                local env, commands = openClient(target.folder), {}
+                if stage ~= "login" then login(env) end
+                if stage == "login" then commands = {"/a[terminal]", "/q[terminal]", "/help"}
+                elseif stage == "folders" then
+                    commands = {"/a[terminal]/{_data}", "/a[terminal]/{_server}", "/a[terminal]/{_tools}", "/q[terminal]", "/help"}
+                else
+                    enterFolder(env, {folder = stage})
+                    commands = {"//[terminal]/{_" .. stage .. "}"}
+                    if target.folder == stage then commands[#commands + 1] = completeCommand(target) end
+                    commands[#commands + 1] = "/help"
+                end
+                helpButton(env, activeEntry(env).parent):DoClick()
+                local rows = insertionRows(helpWindows(env)[1])
+                equal(#rows, #commands, "Unexpected offered insertion action")
+                for i, command in ipairs(commands) do
+                    equal(rows[i].command, command)
+                    insertCommand(env, command)
+                end
+                env.receive("PlayerDied", nil); env.assertClosed()
+            end)
+        end
+    end
+
+    for _, names in ipairs({
+        {label = "long", name = string.rep("n", 128), file = string.rep("f", 128), nameChars = 128, fileChars = 128},
+        {label = "multibyte", name = "终端é", file = "档案🔐", nameChars = 3, fileChars = 3},
+        {label = "invalid UTF-8", name = "bad" .. string.char(255), file = "file" .. string.char(192, 128)},
+    }) do
+        test("insertion preserves " .. names.label .. " configured names and caret position", function()
+            local env = openClient("server", nil, names.name, names.file)
+            local access = "/a[" .. names.name .. "]"
+            local entry = insertCommand(env, access, names.nameChars and names.nameChars + 4 or #access)
+            entry:OnEnter(); env.fireTimer("AccessDelay")
+            local folder = "/a[" .. names.name .. "]/{_server}"
+            entry = insertCommand(env, folder, names.nameChars and names.nameChars + 14 or #folder)
+            entry:OnEnter()
+            local download = "/d{_server}/" .. names.file .. ".sys"
+            insertCommand(env, download, names.fileChars and names.fileChars + 16 or #download)
+            env.receive("PlayerDied", nil); env.assertClosed()
+        end)
+    end
+
+    for _, countdown in ipairs({
+        {name = "AccessDelay", start = "/a[terminal]", command = "/q[terminal]"},
+        {name = "DownloadDataFile", kind = kinds[1], start = completeCommand(kinds[1]), command = "//[terminal]/{_data}"},
+        {name = "DownloadServerFile", kind = kinds[2], start = completeCommand(kinds[2]), command = "//[terminal]/{_server}"},
+    }) do
+        test(countdown.name .. " blocks insertion before and after the first countdown Think", function()
+            local env = openClient(countdown.kind and countdown.kind.folder or "data")
+            if countdown.kind then login(env); enterFolder(env, countdown.kind) end
+            local entry = activeEntry(env)
+            env.command(countdown.start)
+            equal(entry:IsKeyboardInputEnabled(), true, "Race check must precede SetEditable(false)")
+            helpButton(env, entry.parent):DoClick()
+            local help = assert(helpWindows(env)[1], "Reference must remain readable during the countdown")
+            local button = findInsertion(help, countdown.command)
+            equal(button.enabled, false, "Pending countdown must visibly disable insertion immediately")
+            local pending, before = env.timers[countdown.name], snapshot(env, entry)
+            button:DoClick()
+            unchanged(env, entry, before)
+            equal(help.valid, true, "Blocked insertion must keep reference available")
+            env.fire("Think")
+            equal(entry:IsKeyboardInputEnabled(), false)
+            if button.Think then button:Think() end
+            equal(button.enabled, false)
+            before = snapshot(env, entry)
+            button:DoClick()
+            unchanged(env, entry, before)
+            equal(env.timers[countdown.name], pending, "Insertion replaced a pending countdown")
+            env.fireTimer(countdown.name)
+            if not countdown.kind then env.receive("PlayerDied", nil) end
+            env.assertClosed()
+        end)
+    end
+
+    for _, subject in ipairs({"input", "parent", "help"}) do
+        for _, blockedBy in ipairs({"hidden", "deletion", "invalid"}) do
+            test(blockedBy .. " " .. subject .. " rejects retained insertion callbacks", function()
+                local env = openClient()
+                local entry = activeEntry(env)
+                entry:SetText("keep this draft"); entry.HistoryPos = 2
+                helpButton(env, entry.parent):DoClick()
+                local help = helpWindows(env)[1]
+                local button = findInsertion(help, "/a[terminal]")
+                local target = subject == "input" and entry or subject == "parent" and entry.parent or help
+                if blockedBy == "hidden" then target:Hide()
+                elseif blockedBy == "deletion" then env.deferPanelRemoval = true; target:Remove()
+                else target:Remove() end
+                local before = snapshot(env, entry)
+                if button.Think then button:Think() end
+                equal(button.enabled, false, "Unavailable owner/help must visibly disable insertion")
+                button:DoClick()
+                unchanged(env, entry, before)
+            end)
+        end
+    end
+
+    for _, subject in ipairs({"input", "parent"}) do
+        for _, blockedBy in ipairs({"hidden", "deletion"}) do
+            test("ShowCommandHelp rejects " .. blockedBy .. " " .. subject, function()
+                local env = openClient()
+                local entry = activeEntry(env)
+                local button = helpButton(env, entry.parent)
+                local target = subject == "input" and entry or entry.parent
+                if blockedBy == "hidden" then target:Hide()
+                else env.deferPanelRemoval = true; target:Remove() end
+                assertRetired(env, button)
+            end)
+        end
+    end
+
+    for _, disable in ipairs({"editable", "keyboard"}) do
+        test(disable .. " disabled input rejects insertion while keeping reference readable", function()
+            local env = openClient()
+            local entry = activeEntry(env)
+            helpButton(env, entry.parent):DoClick()
+            local help = helpWindows(env)[1]
+            local button = findInsertion(help, "/a[terminal]")
+            if disable == "editable" then entry:SetEditable(false)
+            else entry:SetKeyboardInputEnabled(false); equal(entry.editable, true) end
+            if button.Think then button:Think() end
+            equal(button.enabled, false)
+            local before = snapshot(env, entry)
+            button:DoClick(); unchanged(env, entry, before)
+            equal(help.valid, true)
+        end)
+    end
+
+    for _, retirement in ipairs({"hidden", "deferred close"}) do
+        test(retirement .. " help is replaced instead of being reused by ShowCommandHelp", function()
+            local env = openClient()
+            local entry = activeEntry(env)
+            local opener = helpButton(env, entry.parent)
+            opener:DoClick()
+            local first = helpWindows(env)[1]
+            if retirement == "hidden" then first:Hide()
+            else env.deferPanelRemoval = true; first:Close() end
+            equal(first.valid, true, "Race needs an existing native panel before removal flushes")
+            opener:DoClick()
+            local second = assert(helpWindows(env)[1], "Closed or hidden help must reopen as a fresh frame")
+            assert(first ~= second, "ShowCommandHelp reused a hidden or retiring frame")
+            local button = findInsertion(second, "/a[terminal]")
+            button:DoClick()
+            equal(entry:GetValue(), "/a[terminal]")
+        end)
+    end
+
+    test("closed and reopened help cannot be changed by the old insertion callback", function()
+        local env = openClient()
+        local entry = activeEntry(env)
+        helpButton(env, entry.parent):DoClick()
+        local first = helpWindows(env)[1]
+        local old = findInsertion(first, "/a[terminal]")
+        first:Close()
+        helpButton(env, entry.parent):DoClick()
+        local second = helpWindows(env)[1]
+        assert(second ~= first)
+        local before = snapshot(env, entry)
+        old:DoClick(); unchanged(env, entry, before)
+        equal(second.valid, true, "An old callback closed the newer help")
+        findInsertion(second, "/q[terminal]"):DoClick()
+        equal(entry:GetValue(), "/q[terminal]")
+    end)
+
+    test("hidden folder selection cannot reopen help or reuse an old insertion after returning", function()
+        local env = openClient()
+        login(env)
+        local entry = activeEntry(env)
+        local helpOpener = helpButton(env, entry.parent)
+        helpOpener:DoClick()
+        local old = findInsertion(helpWindows(env)[1], "/a[terminal]/{_tools}")
+        enterFolder(env, kinds[1])
+        equal(entry:IsVisible(), true, "Native self visibility must expose the hidden-parent race")
+        equal(entry.parent:IsVisible(), false)
+        assertRetired(env, helpOpener)
+        old:DoClick()
+        env.command("//[terminal]/{_data}")
+        equal(activeEntry(env), entry)
+        helpOpener:DoClick()
+        local current = helpWindows(env)[1]
+        entry:SetText("new draft")
+        local before = snapshot(env, entry)
+        old:DoClick(); unchanged(env, entry, before)
+        equal(current.valid, true)
+    end)
+
+    for _, ending in ipairs({"new session", "death", "deferred close"}) do
+        test(ending .. " retires insertion callbacks without changing a later draft", function()
+            local env = openClient()
+            local first = activeEntry(env)
+            helpButton(env, first.parent):DoClick()
+            local help = helpWindows(env)[1]
+            local button = findInsertion(help, "/a[terminal]")
+            if ending == "new session" then
+                env.command("/q[terminal]"); openClient("data", env)
+            elseif ending == "death" then env.receive("PlayerDied", nil)
+            else env.deferPanelRemoval = true; help:Close() end
+            local entry = ending == "new session" and activeEntry(env) or first
+            if entry.valid then entry:SetText("new draft") end
+            if ending == "new session" then helpButton(env, entry.parent):DoClick() end
+            local current = ending == "new session" and helpWindows(env)[1]
+            local before = snapshot(env, entry)
+            button:DoClick(); unchanged(env, entry, before)
+            if current then equal(current.valid, true) end
+        end)
+    end
+
+    test("Enter alone submits inserted help and quit commands to their original handlers", function()
+        for _, stage in ipairs({"login", "folders"}) do
+            local env = openClient()
+            if stage == "folders" then login(env) end
+            local entry = insertCommand(env, "/help")
+            local histories = #env.historyCalls
+            entry:OnEnter()
+            equal(#env.historyCalls, histories + 1)
+            equal(env.historyCalls[#env.historyCalls].text, "/help")
+            equal(#helpWindows(env), 1)
+            entry = insertCommand(env, "/q[terminal]")
+            local sent = #env.messages
+            entry:OnEnter()
+            equal(#env.messages, sent + 1)
+            equal(env.lastMessage("playerQuitConsole").values[2].class, "consoleent")
+            env.assertClosed()
+        end
+    end)
+
+    for _, kind in ipairs(kinds) do
+        test(kind.folder .. " inserted commands complete through the actual client and server only after Enter", function()
+            local server, client = gmod.new(), gmod.client()
+            local owner, hacker, intruder = server.player(), server.player(), server.player()
+            local console = server.console(owner)
+            local info = server.configure(owner, console, kind.folder, 2)
+            local door
+            if kind.folder == "tools" then
+                door = server.entity("func_door")
+                owner.target = door
+                server.fire("PlayerSay", owner, "!setEntity")
+            end
+            server.open(hacker, console)
+            local opening = assert(server.lastMessage("ServerSendsEntityInformation"))
+            client.receive(opening.name, nil, unpackValues(opening.values))
+            local entry = insertCommand(client, "/a[terminal]")
+            entry:OnEnter()
+            equal(client.timers.AccessDelay.delay, 2)
+            client.fireTimer("AccessDelay")
+            entry = insertCommand(client, "/a[terminal]/{_" .. kind.folder .. "}")
+            entry:OnEnter()
+            entry = insertCommand(client, "//[terminal]/{_" .. kind.folder .. "}")
+            entry:OnEnter()
+            equal(activeEntry(client).parent, client.secondPage)
+            entry = insertCommand(client, "/a[terminal]/{_" .. kind.folder .. "}")
+            entry:OnEnter()
+            entry = insertCommand(client, completeCommand(kind))
+            equal(console.removed, nil); equal(info.inUse, true)
+            equal(server.lastMessage("SlicerCompleted"), nil)
+            equal(client.lastMessage(kind.message), nil)
+            server.now = 4
+            server.receive(kind.message, intruder, console)
+            equal(console.removed, nil); equal(info.inUse, true)
+            local histories, sent = #client.historyCalls, #client.messages
+            entry:OnEnter()
+            equal(#client.historyCalls, histories + 1)
+            equal(client.historyCalls[#client.historyCalls].text, completeCommand(kind))
+            if kind.timer then
+                equal(#client.messages, sent, "Download packet preceded its unchanged delay")
+                equal(client.timers[kind.timer].delay, 2)
+                client.fireTimer(kind.timer)
+            end
+            equal(#client.messages, sent + 1)
+            local packet = assert(client.lastMessage(kind.message))
+            equal(#packet.values, 1); equal(packet.values[1], console)
+            server.receive(packet.name, hacker, unpackValues(packet.values))
+            equal(info.inUse, false); equal(console.removed, true)
+            equal(server.lastMessage("SlicerCompleted").player, hacker)
+            if door then equal(door.inputs[#door.inputs], "Unlock") end
             client.assertClosed()
         end)
     end

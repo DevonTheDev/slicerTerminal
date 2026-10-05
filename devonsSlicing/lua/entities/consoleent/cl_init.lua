@@ -4,7 +4,7 @@ local COMMAND_PROMPT = "Run commands here... (/help | Up/Down history)"
 local commandHelpFrame, commandHelpOwner
 
 local function closeCommandHelp()
-    if IsValid(commandHelpFrame) then commandHelpFrame:Remove() end
+    if IsValid(commandHelpFrame) and not commandHelpFrame:IsMarkedForDeletion() then commandHelpFrame:Remove() end
     commandHelpFrame, commandHelpOwner = nil, nil
 end
 
@@ -34,14 +34,18 @@ local function terminalCommands(info, stage)
     return commands
 end
 
+local function isLiveCommandPanel(panel)
+    return IsValid(panel) and not panel:IsMarkedForDeletion() and panel:IsVisible()
+end
+
 local function configureCommandAssistance(input, parent, info, stage, history)
     input:SetHistoryEnabled(true)
     input.History = history
     input.HistoryPos = 0
     local commands = terminalCommands(info, stage)
     input.ShowCommandHelp = function()
-        if not IsValid(input) or not IsValid(parent) then return end
-        if IsValid(commandHelpFrame) and commandHelpOwner == input then
+        if not isLiveCommandPanel(input) or not isLiveCommandPanel(parent) then return end
+        if isLiveCommandPanel(commandHelpFrame) and commandHelpOwner == input then
             commandHelpFrame:MakePopup()
             return
         end
@@ -54,9 +58,26 @@ local function configureCommandAssistance(input, parent, info, stage, history)
         commandHelpFrame:SetDeleteOnClose(true)
         commandHelpFrame:ShowCloseButton(true)
         commandHelpFrame:MakePopup()
-        local scroll = vgui.Create("DScrollPanel", commandHelpFrame)
+        local help = commandHelpFrame -- Callbacks belong to this exact opened help window.
+        local function canInsertCommand()
+            return commandHelpFrame == help and commandHelpOwner == input
+                and isLiveCommandPanel(help) and isLiveCommandPanel(parent) and isLiveCommandPanel(input)
+                and input:IsKeyboardInputEnabled()
+                and not timer.Exists("AccessDelay") and not timer.Exists("DownloadDataFile")
+                and not timer.Exists("DownloadServerFile")
+        end
+        local scroll = vgui.Create("DScrollPanel", help)
         scroll:Dock(FILL)
+        local notice = scroll:Add("DLabel")
+        notice:Dock(TOP)
+        notice:DockMargin(12, 6, 12, 8)
+        notice:SetFont("HackingFont")
+        notice:SetTextColor(Color(220, 220, 220, 255))
+        notice:SetWrap(true)
+        notice:SetAutoStretchVertical(true)
+        notice:SetText("Insert replaces the current draft. Press Enter to run.")
         for _, command in ipairs(commands) do
+            local commandText = command[1]
             local label = scroll:Add("DLabel")
             label:Dock(TOP)
             label:DockMargin(12, 6, 12, 8)
@@ -64,7 +85,22 @@ local function configureCommandAssistance(input, parent, info, stage, history)
             label:SetTextColor(Color(220, 220, 220, 255))
             label:SetWrap(true)
             label:SetAutoStretchVertical(true)
-            label:SetText(command[1] .. "\n" .. command[2])
+            label:SetText(commandText .. "\n" .. command[2])
+            local insert = scroll:Add("DButton")
+            insert:Dock(TOP)
+            insert:DockMargin(12, 0, 12, 8)
+            insert:SetTall(26)
+            insert:SetText("Insert command")
+            insert.Think = function(self) self:SetEnabled(canInsertCommand()) end
+            insert:Think()
+            insert.DoClick = function()
+                if not canInsertCommand() then return end
+                closeCommandHelp()
+                input.HistoryPos = 0
+                input:SetText(commandText)
+                input:SetCaretPos(utf8.len(commandText) or #commandText)
+                input:RequestFocus()
+            end
         end
     end
     local button = vgui.Create("DButton", parent)

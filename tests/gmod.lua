@@ -194,7 +194,31 @@ end
 function M.client()
     local env = M.new()
     env.ENT, env.receivers, env.hooks, env.panels, env.timers = {}, {}, {}, {}, {}
-    env.timerEvents, env.historyCalls = {}, {}
+    env.timerEvents, env.historyCalls, env.focusCalls, env.caretCalls = {}, {}, {}, {}
+    -- GMod provides utf8.len even on its Lua 5.1-based runtime. Supply the same
+    -- character-count/false-on-invalid contract when the host has no UTF-8 library.
+    local hostUtf8 = utf8 or {len = function(value)
+        local count, position = 0, 1
+        while position <= #value do
+            local first = value:byte(position)
+            local width = first < 128 and 1 or (first >= 194 and first <= 223 and 2)
+                or (first >= 224 and first <= 239 and 3) or (first >= 240 and first <= 244 and 4)
+            if not width or position + width - 1 > #value then return false, position end
+            for offset = 1, width - 1 do
+                local nextByte = value:byte(position + offset)
+                if nextByte < 128 or nextByte > 191 then return false, position end
+            end
+            local second = value:byte(position + 1)
+            if (first == 224 and second < 160) or (first == 237 and second > 159)
+                or (first == 240 and second < 144) or (first == 244 and second > 143) then return false, position end
+            count, position = count + 1, position + width
+        end
+        return count
+    end}
+    env.utf8 = {len = function(value)
+        local length, invalidPosition = hostUtf8.len(value)
+        return length or false, invalidPosition
+    end}
     env.FILL, env.TOP = 5, 1
     env.surface = {CreateFont = function() end, PlaySound = function() end}
     env.Color = function(...) return {...} end
@@ -234,10 +258,33 @@ function M.client()
     env.vgui = {}
     function env.vgui.Create(class, parent)
         local panel = {valid = true, class = class, parent = parent, text = "", children = {}}
-        if class == "DTextEntry" then panel.History = {}; panel.HistoryPos = 0 end
+        if class == "DTextEntry" then
+            panel.History, panel.HistoryPos = {}, 0
+            panel.editable, panel.keyboardInputEnabled = true, true
+        end
         if parent then table.insert(parent.children, panel) end
-        for _, name in ipairs({"SetSize", "Center", "ShowCloseButton", "MakePopup", "SetTitle", "SetDeleteOnClose", "SetDraggable", "SetFont", "SetPlaceholderText", "SetPlaceholderColor", "SetPos", "SetTextColor", "SetEditable", "SetPaintBackground", "SetCursorColor", "SetContentAlignment", "MoveTo", "SetImage", "AllowInput", "AddChoice"}) do
+        for _, name in ipairs({"SetSize", "Center", "ShowCloseButton", "MakePopup", "SetTitle", "SetDeleteOnClose", "SetDraggable", "SetFont", "SetPlaceholderText", "SetPlaceholderColor", "SetPos", "SetTextColor", "SetPaintBackground", "SetCursorColor", "SetContentAlignment", "MoveTo", "SetImage", "AllowInput", "AddChoice"}) do
             panel[name] = function(self, ...) assert(self.valid, name .. " on removed panel") end
+        end
+        function panel:SetEditable(value)
+            assert(self.valid, "SetEditable on removed panel")
+            self.editable = value
+            self:SetKeyboardInputEnabled(value)
+        end
+        function panel:SetKeyboardInputEnabled(value) self.keyboardInputEnabled = value end
+        function panel:IsKeyboardInputEnabled() return self.keyboardInputEnabled == true end
+        function panel:IsMarkedForDeletion() return self.markedForDeletion == true end
+        function panel:SetEnabled(value) self.enabled = value end
+        function panel:SetTall(value) self.height = value end
+        function panel:SetCaretPos(value)
+            assert(self.valid, "SetCaretPos on removed panel")
+            self.caret = value
+            table.insert(env.caretCalls, {panel = self, position = value})
+        end
+        function panel:RequestFocus()
+            assert(self.valid, "RequestFocus on removed panel")
+            env.focusedPanel = self
+            table.insert(env.focusCalls, self)
         end
         function panel:SetText(value) assert(self.valid, "SetText on removed panel"); self.text = value end
         function panel:SetTitle(value) assert(self.valid, "SetTitle on removed panel"); self.title = value end
@@ -259,14 +306,8 @@ function M.client()
         function panel:DockMargin(...) assert(self.valid, "DockMargin on removed panel"); self.dockMargin = {...} end
         function panel:SetWrap(value) assert(self.valid, "SetWrap on removed panel"); self.wrap = value end
         function panel:SetAutoStretchVertical(value) assert(self.valid, "SetAutoStretchVertical on removed panel"); self.autoStretchVertical = value end
-        function panel:IsVisible()
-            local ancestor = self
-            while ancestor do
-                if not ancestor.valid or ancestor.hidden then return false end
-                ancestor = ancestor.parent
-            end
-            return true
-        end
+        -- Native IsVisible checks this panel only, not hidden ancestors.
+        function panel:IsVisible() return not self.hidden end
         function panel:GetValue() assert(self.valid, "GetValue on removed panel"); return self.text end
         function panel:GetSelected() return self.selected end
         function panel:GetX() return 0 end
@@ -276,6 +317,9 @@ function M.client()
         function panel:Show() self.hidden = false end
         function panel:Remove()
             assert(self.valid, "Remove on removed panel")
+            self.markedForDeletion = true
+            -- Opt into the native deferred-removal interval for race tests.
+            if env.deferPanelRemoval then return end
             self.valid = false
             for _, child in ipairs(self.children) do if child.valid then child:Remove() end end
         end

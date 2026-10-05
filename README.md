@@ -9,7 +9,7 @@ and terminal-driven downloads or door unlocking.
    the server. Clients need the included materials, fonts and sounds too.
 2. Spawn **Devons Console Entity** and fill out its setup form. Only its spawner
    may submit its initial configuration. Console/file names must be nonblank,
-   at most 128 characters, and are normalized to lowercase. The delay must be a
+   at most 128 bytes, and are normalized to lowercase. The delay must be a
    finite positive number of seconds; the folder is `data`, `server`, or `tools`.
    **Done** reads the current fields, including the active text entry. Invalid
    fields keep the form open so they can be corrected; each new form starts
@@ -42,6 +42,13 @@ the current terminal screen. The reference fills in that terminal's real name
 and filename. A folder only offers a download or tool command when it contains
 the target file; every folder includes its return command. Help can be closed
 without quitting, and it does not submit an action or bypass a countdown.
+
+Choose **Insert command** beneath a reference entry to replace the current
+draft with that exact command. Help closes and the command entry receives focus
+with its caret at the end. You can edit the draft before pressing Enter; only
+Enter submits it or adds it to history. Insertion is unavailable during a login
+or download countdown, while the reference remains readable. Closed or retired
+help windows cannot insert into a later terminal screen or session.
 
 Use the Up and Down arrows in the command entry to recall recent submissions
 and correct a typo. The last 20 distinct submissions are shared across the
@@ -89,7 +96,8 @@ texlua tests/run.lua
 The suite needs no downloaded dependencies. It runs the actual addon code with
 small Garry's Mod API doubles. Its loader translates GLua `!`, `!=`, and `//`
 comments for stock Lua without modifying command strings. The harness supports
-Lua 5.1 and newer; the current pass was verified with Lua 5.3 via `texlua`.
+Lua 5.1 and newer. This pass was checked with Lua 5.3 via `texlua`, plus Lua 5.1
+and LuaJIT 2.1 through Lupa 2.6.
 
 Coverage includes malicious/malformed network requests, concurrent users,
 creator-only setup, stale/deleted entities, independent door links, session
@@ -105,6 +113,12 @@ Command-assistance tests run the actual client callbacks for every folder/target
 combination, bounded per-terminal history, help dismissal/retirement and the
 unchanged client-to-server completion flows. They check the documented history
 API and data contract, not native arrow-key dispatch or Derma rendering.
+
+Insertion tests cover exact contextual commands, long and multibyte names,
+caret/focus requests, draft replacement without submission, countdown guards,
+hidden/deletion-marked panels and stale callbacks after a page is reused. They
+also run the inserted-command paths through the actual client/server handlers.
+The host doubles do not certify native focus transfer, caret placement or layout.
 
 The original client source uses CRLF line endings, which this change preserves.
 To check whitespace without treating CRLF as trailing whitespace:
@@ -138,6 +152,9 @@ emulated. Before a live rollout, use a test server to check:
 - Open Commands or type `/help` at each stage; close help and finish normally.
   Recall and edit a command with Up/Down, then quit and open a new terminal to
   verify history is fresh. Check help wrapping and scrolling with long names
+- Insert a command from help, edit it and press Enter. Check the caret with
+  multibyte names, confirm insertion is disabled during countdowns, and finish
+  each terminal type normally
 - Link two tools terminals to different doors; finishing one must leave the
   other door locked, and using unrelated entities must still work
 - Check fonts, sounds and layouts at the clients' screen resolutions
