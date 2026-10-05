@@ -11,7 +11,7 @@ return function(gmod, test, equal)
             local panel = client.panels[i]
             if panel.class == "DTextEntry" then entries[#entries + 1] = panel
             elseif panel.class == "DComboBox" then choice = panel
-            elseif panel.class == "DButton" then done = panel
+            elseif panel.class == "DButton" and panel.text == "Done" then done = panel
             elseif panel.class == "DFrame" then frame = panel end
         end
         entries[1]:SetText(name)

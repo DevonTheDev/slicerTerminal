@@ -30,6 +30,19 @@ and terminal-driven downloads or door unlocking.
    callable `ShouldDropOnDie` hook returns false, overriding the base weapon
    policy without replacing the method with a boolean.
 
+### Set up a console later
+
+Choose **Set up later** to close a console's setup without configuring or removing
+it. Its unsaved fields are discarded. When you're ready, use that unconfigured
+console to open a fresh setup; only its original spawner can do this, and the
+hacking tool is not required for setup.
+
+Reopening a setup that is already on screen brings that same form forward and
+keeps its current fields. Different consoles keep separate forms. Closing one
+does not submit another console's configuration, release an active hack or
+change a pending door selection. Once **Done** configures a console, Use follows
+the normal hacking flow; this does not make saved configurations editable.
+
 For a terminal named `terminal` and file named `secret`:
 
 | Action | Command |
@@ -156,6 +169,11 @@ retry, immutable configuration, prior door assignments and final-link eligibilit
 changes. Active hacks cannot be redirected, including after their door is removed.
 The doubles do not certify native chat delivery or eye-trace targeting.
 
+Deferred-setup tests follow spawn, local dismissal, creator Use, configuration and
+the existing hack/door flows. They check duplicate-form focus, independent
+terminals, retired callbacks and creator ownership. Native focus transfer,
+button layout and world Use targeting still need a server/client smoke check.
+
 The original client source uses CRLF line endings, which this change preserves.
 To check whitespace without treating CRLF as trailing whitespace:
 
@@ -172,6 +190,9 @@ emulated. Before a live rollout, use a test server to check:
 - Spawn/configure one terminal of each type and complete their command flows
 - Edit the final setup field and click Done directly; repeat with a new console
   and confirm the new form cannot submit values from the previous one
+- Choose Set up later, then use the unconfigured console without the hacking
+  tool and finish a fresh setup. Confirm another player cannot reopen it; reopen
+  an already visible setup and check its typing and focus are retained
 - Try a blank name/file, missing folder, and nonpositive delay; correct each
   rejected form and verify it can still configure its terminal
 - Equip the hacking tool and verify its pistol hold animation in multiplayer;

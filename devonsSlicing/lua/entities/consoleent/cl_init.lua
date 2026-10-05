@@ -3,6 +3,7 @@ include("entities/consoleent/shared.lua")
 local COMMAND_PROMPT = "Run commands here... (/help | Up/Down history)"
 local commandHelpFrame, commandHelpOwner
 local activeTerminalSession
+local setupForms = {} -- Current unsaved form for each console, never saved drafts.
 local closeConsoleUI
 
 local function closeCommandHelp()
@@ -235,9 +236,30 @@ net.Receive("PlayerSpawnedConsole", function()
 
     local callingPlayer = net.ReadEntity() -- Accesses the player who spawned the console
     local sentConsoleName = net.ReadString() -- Accesses the spawned console
+    if not IsValid(callingPlayer) or not callingPlayer:IsPlayer() or not callingPlayer:Alive() then return end
+
+    local previous = setupForms[sentConsoleName]
+    if isLiveCommandPanel(previous) then
+        previous:MakePopup()
+        previous:MoveToFront()
+        return -- Repeated Use keeps the current draft and its callbacks.
+    end
+    setupForms[sentConsoleName] = nil
+    if IsValid(previous) and not previous:IsMarkedForDeletion() then previous:Remove() end
 
     -- Sets up the background frame
     local initialParent = vgui.Create("DFrame")
+    setupForms[sentConsoleName] = initialParent
+    local function isCurrentSetup()
+        return setupForms[sentConsoleName] == initialParent and isLiveCommandPanel(initialParent)
+    end
+    local function retireSetup()
+        if setupForms[sentConsoleName] == initialParent then setupForms[sentConsoleName] = nil end
+    end
+    -- Close may hide a frame or defer removal. Either native cleanup callback
+    -- must retire only its own form, never a later form for the same console.
+    initialParent.OnClose = retireSetup
+    initialParent.OnRemove = retireSetup
     initialParent:SetSize(ScrW(), ScrH())
     initialParent:Center()
     initialParent:ShowCloseButton(false)
@@ -298,6 +320,8 @@ net.Receive("PlayerSpawnedConsole", function()
     finishButton:SetPos(fileType:GetX(), fileType:GetY() + 300)
     finishButton:SetText("Done")
     function finishButton.DoClick()
+        if not isCurrentSetup() or not IsValid(callingPlayer)
+            or not callingPlayer:IsPlayer() or not callingPlayer:Alive() then return end
         -- Read this form at submission time; focus callbacks and globals can
         -- miss the latest edit or leak values into another console's setup.
         local enteredConsoleName = consoleNameFrame:GetValue()
@@ -317,10 +341,11 @@ net.Receive("PlayerSpawnedConsole", function()
         end
 
         local consoleInformation = {enteredConsoleName, enteredSliceDelay, enteredFileType, enteredFileName, sentConsoleName}
+        retireSetup() -- Retire synchronously before sending or native removal.
+        initialParent:Close()
         net.Start("AdminFinishedCreation")
             net.WriteTable(consoleInformation)
         net.SendToServer()
-        initialParent:Close()
 
         if enteredFileType == "tools" then
             callingPlayer:ChatPrint("Please type !setEntity when looking at a door to link the console.")
@@ -328,6 +353,17 @@ net.Receive("PlayerSpawnedConsole", function()
                 net.WriteEntity(callingPlayer)
             net.SendToServer()
         end
+    end
+
+    -- Use the existing gap above Done so the form needs no extra screen height.
+    local laterButton = vgui.Create("DButton", initialParent)
+    laterButton:SetSize(200, 60)
+    laterButton:SetPos(fileType:GetX(), fileType:GetY() + 220)
+    laterButton:SetText("Set up later")
+    function laterButton.DoClick()
+        if not isCurrentSetup() then return end
+        retireSetup()
+        initialParent:Close() -- Setup-only dismissal must not quit another hack.
     end
 end)
 

@@ -53,24 +53,34 @@ function ENT:Initialize()
     self:SetName("DevonsConsoleEntity" .. self:GetCreationID())
 end
 
-hook.Add("PlayerSpawnedSENT", "checkForConsole", function(ply, ent)
-    if not IsValid(ent) or ent:GetClass() ~= "consoleent" then return end
-    ent.SlicerCreator = ply
+local function openSetup(ply, ent)
+    if not IsValid(ply) or not ply:IsPlayer() or not ply:Alive() then return end
     net.Start("PlayerSpawnedConsole")
         net.WriteEntity(ply)
         net.WriteString(ent:GetName())
     net.Send(ply)
+end
+
+hook.Add("PlayerSpawnedSENT", "checkForConsole", function(ply, ent)
+    if not IsValid(ent) or ent:GetClass() ~= "consoleent" then return end
+    ent.SlicerCreator = ply
+    openSetup(ply, ent)
 end)
 
 function ENT:AcceptInput(name, activator, caller)
-    if name ~= "Use" or not IsValid(activator) or not activator:IsPlayer() then return end
+    if name ~= "Use" or not IsValid(self) or not IsValid(activator) or not activator:IsPlayer() then return end
+    local information = self.SlicerInformation
+    if not information then
+        -- Initial setup belongs to the creator and needs no hacking tool.
+        -- Reopening does not reserve a hack or change a pending door choice.
+        if self.SlicerCreator == activator then openSetup(activator, self) end
+        return
+    end
     if not hasHackingTool(activator) then
         activator:ChatPrint("You don't have the necessary tools to hack this console.")
         return
     end
 
-    local information = self.SlicerInformation
-    if not information then return end
     if information.fileType == "tools" and not IsValid(self.SlicerDoor) then
         local message = "This console does not have a linked door yet."
         if canLinkConsole(activator, self) then message = message .. " " .. selectionInstruction end

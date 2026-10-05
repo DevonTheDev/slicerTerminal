@@ -226,6 +226,7 @@ end
 local function openSetup(env, entityName, player)
     player = player or env.entity("player")
     player.chats = player.chats or {}
+    if not player.Alive then function player:Alive() return true end end
     function player:ChatPrint(message) table.insert(self.chats, message) end
     local start = #env.panels
     env.receive("PlayerSpawnedConsole", nil, player, entityName or "console1")
@@ -234,7 +235,7 @@ local function openSetup(env, entityName, player)
         local panel = env.panels[i]
         if panel.class == "DFrame" then form.frame = panel
         elseif panel.class == "DComboBox" then form.folder = panel
-        elseif panel.class == "DButton" then form.done = panel
+        elseif panel.class == "DButton" and panel.text == "Done" then form.done = panel
         elseif panel.class == "DTextEntry" then entries[#entries + 1] = panel end
     end
     form.name, form.delay, form.file = entries[1], entries[2], entries[3]
@@ -551,6 +552,7 @@ dofile("tests/completion.lua")(gmod, test, equal)
 dofile("tests/command-assistance.lua")(gmod, test, equal)
 dofile("tests/terminal-quit.lua")(gmod, test, equal)
 dofile("tests/terminal-reselection.lua")(gmod, test, equal)
+dofile("tests/deferred-setup.lua")(gmod, test, equal)
 
 print(string.format("\n%d passed, %d failed", passed, failed))
 if failed > 0 then os.exit(1) end

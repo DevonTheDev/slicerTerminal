@@ -266,6 +266,16 @@ function M.client()
         for _, name in ipairs({"SetSize", "Center", "ShowCloseButton", "MakePopup", "SetTitle", "SetDeleteOnClose", "SetDraggable", "SetFont", "SetPlaceholderText", "SetPlaceholderColor", "SetPos", "SetTextColor", "SetPaintBackground", "SetCursorColor", "SetContentAlignment", "MoveTo", "SetImage", "AllowInput", "AddChoice"}) do
             panel[name] = function(self, ...) assert(self.valid, name .. " on removed panel") end
         end
+        function panel:SetDeleteOnClose(value) self.deleteOnClose = value end
+        function panel:MakePopup()
+            assert(self.valid, "MakePopup on removed panel")
+            self.popupCalls = (self.popupCalls or 0) + 1
+            env.focusedPanel = self
+        end
+        function panel:MoveToFront()
+            assert(self.valid, "MoveToFront on removed panel")
+            self.frontCalls = (self.frontCalls or 0) + 1
+        end
         function panel:SetEditable(value)
             assert(self.valid, "SetEditable on removed panel")
             self.editable = value
@@ -320,10 +330,17 @@ function M.client()
             self.markedForDeletion = true
             -- Opt into the native deferred-removal interval for race tests.
             if env.deferPanelRemoval then return end
+            if self.OnRemove then self:OnRemove() end
             self.valid = false
             for _, child in ipairs(self.children) do if child.valid then child:Remove() end end
         end
-        panel.Close = panel.Remove
+        -- DFrame Close hides/removes according to SetDeleteOnClose and calls
+        -- OnClose. OnRemove is also delivered for direct/runtime removal.
+        function panel:Close()
+            self:Hide()
+            if self.deleteOnClose ~= false then self:Remove() end
+            if self.OnClose then self:OnClose() end
+        end
         table.insert(env.panels, panel)
         return panel
     end
