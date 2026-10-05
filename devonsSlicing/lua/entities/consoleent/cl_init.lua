@@ -783,6 +783,11 @@ local filenames = {
                                        end
                                    
                                    end)
+                               else
+                                   dataInputTerminal:SetPlaceholderColor(Color(255, 0, 0, 255))
+                                   dataInputTerminal:SetText("")
+                                   dataInputTerminal:SetPlaceholderText("[ERROR] - FILE NOT HERE (/help)")
+                                   return
                                end
                            end
                            if(string.lower(dataInputTerminal:GetValue()) != "/d" .. acceptedFolders[1] .. "/" .. consoleInfo["fileName"] .. ".data" and string.lower(dataInputTerminal:GetValue()) != "//[" .. consoleInfo["name"] .. "]/" .. acceptedFolders[1]) then
@@ -963,6 +968,11 @@ local filenames = {
                                        end
                                    
                                    end)
+                               else
+                                   serverInputTerminal:SetPlaceholderColor(Color(255, 0, 0, 255))
+                                   serverInputTerminal:SetText("")
+                                   serverInputTerminal:SetPlaceholderText("[ERROR] - FILE NOT HERE (/help)")
+                                   return
                                end
                            end
                            if(string.lower(serverInputTerminal:GetValue()) != "/d" .. acceptedFolders[2] .. "/" .. consoleInfo["fileName"] .. ".sys" and string.lower(serverInputTerminal:GetValue()) != "//[" .. consoleInfo["name"] .. "]/" .. acceptedFolders[2]) then
@@ -1129,6 +1139,11 @@ local filenames = {
                                        net.WriteEntity(usedConsole) -- Allows us to delete the console on server side
                                    net.SendToServer()
 
+                                   return
+                               else
+                                   toolsInputTerminal:SetPlaceholderColor(Color(255, 0, 0, 255))
+                                   toolsInputTerminal:SetText("")
+                                   toolsInputTerminal:SetPlaceholderText("[ERROR] - FILE NOT HERE (/help)")
                                    return
                                end
                            end

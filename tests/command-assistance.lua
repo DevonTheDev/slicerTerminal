@@ -450,6 +450,161 @@ return function(gmod, test, equal)
         return entry, button
     end
 
+    local function openFileCommandFlow(target, current)
+        local server, client = gmod.new(), gmod.client()
+        local owner, hacker = server.player(), server.player()
+        local console = server.console(owner)
+        local info = assert(server.configure(owner, console, target.folder, 2))
+        if target.folder == "tools" then
+            owner.target = server.entity("func_door")
+            server.fire("PlayerSay", owner, "!setEntity")
+        end
+        server.open(hacker, console)
+        local opening = assert(server.lastMessage("ServerSendsEntityInformation"))
+        client.receive(opening.name, nil, unpackValues(opening.values))
+        login(client)
+        server.now = 2
+        enterFolder(client, current or target)
+        for _, packet in ipairs(client.messages) do
+            equal(packet.name, "updateInUse", "Only reservation traffic may precede the action")
+            server.receive(packet.name, hacker, unpackValues(packet.values))
+        end
+        return server, client, hacker, console, info
+    end
+
+    local function finishFileCommandFlow(target, server, client, hacker, console, info)
+        local sent, entry = #client.messages, activeEntry(client)
+        client.command(completeCommand(target))
+        if target.timer then
+            local pending = assert(client.timers[target.timer], "Matching file must start its download")
+            equal(pending.delay, 2); equal(pending.repeats, 1)
+            equal(#client.messages, sent, "The download must not send its completion before its timer")
+            client.fire("Think")
+            equal(entry.editable, false)
+            contains(entry.placeholder, "Time to download: 2 seconds")
+            equal(console.removed, nil); equal(info.inUse, true)
+            equal(server.lastMessage("SlicerCompleted"), nil)
+            server.now = 4
+            client.fireTimer(target.timer)
+        end
+        client.assertClosed()
+        equal(#client.messages, sent + 1, "Completion must send exactly one packet")
+        local packet = assert(client.lastMessage(target.message))
+        equal(packet.values[1], console)
+        equal(#client.chatMessages, 0, "A client request alone must not announce success")
+        server.receive(packet.name, server.player(), unpackValues(packet.values))
+        equal(console.removed, nil, "Another sender must not complete this session")
+        equal(info.inUse, true); equal(server.lastMessage("SlicerCompleted"), nil)
+        server.receive(packet.name, hacker, unpackValues(packet.values))
+        equal(console.removed, true); equal(info.inUse, false)
+        local accepted = assert(server.lastMessage("SlicerCompleted"), "The server did not accept recovery")
+        equal(accepted.player, hacker)
+        if target.folder == "tools" then equal(console.SlicerDoor.inputs[#console.SlicerDoor.inputs], "Unlock") end
+        client.receive(accepted.name, nil, unpackValues(accepted.values))
+        equal(#client.chatMessages, 1)
+    end
+
+    -- These source-loaded callback tests would fail if a mismatched file command
+    -- stayed silent, fell through to the typo error, or started an action.
+    for _, current in ipairs(kinds) do
+        for _, target in ipairs(kinds) do
+            if current.folder ~= target.folder then
+                test("unavailable file command in " .. current.folder .. " explains refusal and recovers to " .. target.folder, function()
+                    local server, client, hacker, console, info = openFileCommandFlow(target, current)
+                    local entry = activeEntry(client)
+                    local color, setColor = nil, entry.SetPlaceholderColor
+                    function entry:SetPlaceholderColor(value) color = value; setColor(self, value) end
+                    for i = 1, 22 do client.command("invalid-" .. i) end
+                    local sent, events, serverSent = #client.messages, #client.timerEvents, #server.messages
+                    local function assertRefused(command)
+                        entry:OnGetFocus()
+                        entry:SetText(command)
+                        color = nil
+                        local historyCalls = #client.historyCalls
+                        entry:OnEnter()
+                        equal(entry.placeholder, "[ERROR] - FILE NOT HERE (/help)", "Unavailable file needs explicit recovery feedback")
+                        equal(entry:GetValue(), "", "The rejected draft must clear like an ordinary error")
+                        assert(color, "Refusal must set its error color")
+                        for i, channel in ipairs({255, 0, 0, 255}) do equal(color[i], channel, "Refusal must use the red error color") end
+                        equal(entry.editable, true); equal(entry:IsKeyboardInputEnabled(), true)
+                        equal(#entry.History, 20, "Refused commands must stay in bounded history")
+                        equal(entry.History[20], command)
+                        equal(#client.historyCalls, historyCalls + 1, "Each submission must enter history once")
+                        client.fire("Think")
+                        equal(entry.placeholder, "[ERROR] - FILE NOT HERE (/help)", "Think must not replace refusal with a countdown")
+                        equal(entry.editable, true); equal(entry:IsKeyboardInputEnabled(), true)
+                        equal(activeEntry(client), entry, "Refusal must keep the same folder and input")
+                        equal(client.timers.DownloadDataFile, nil); equal(client.timers.DownloadServerFile, nil)
+                        equal(client.hooks.Think.downloadDataFile, nil); equal(client.hooks.Think.downloadServerFile, nil)
+                        equal(#client.timerEvents, events, "Refusal must not create, restart, stop or remove timers")
+                        equal(#client.messages, sent, "Refusal must not send any packet")
+                        equal(#server.messages, serverSent)
+                        equal(console.removed, nil); equal(info.inUse, true)
+                        equal(server.lastMessage("SlicerCompleted"), nil)
+                        if target.folder == "tools" then equal(console.SlicerDoor.inputs[#console.SlicerDoor.inputs], "Lock") end
+                    end
+                    local command = completeCommand(current)
+                    assertRefused(command)
+                    equal(entry.History[1], "invalid-4", "The refused command must evict the oldest history item")
+                    assertRefused(string.upper(command))
+                    assertRefused(string.upper(command))
+                    equal(entry.History[1], "invalid-5", "Repeating the same spelling must not evict another item")
+                    -- Submit text recalled from the real history array. Native
+                    -- arrow-key dispatch is deliberately outside this host test.
+                    equal(entry.History[19], command)
+                    assertRefused(entry.History[19])
+                    local help, text = openHelp(client)
+                    for _, kind in ipairs(kinds) do excludes(text, completeCommand(kind)) end
+                    local back = "//[terminal]/{_" .. current.folder .. "}"
+                    local historyCalls = #client.historyCalls
+                    findInsertion(help, back):DoClick()
+                    equal(entry:GetValue(), back); equal(activeEntry(client), entry)
+                    equal(#client.historyCalls, historyCalls, "Inserting Return must wait for Enter")
+                    equal(#client.timerEvents, events); equal(#client.messages, sent)
+                    entry:OnEnter()
+                    equal(entry.parent.valid, false); equal(activeEntry(client).parent, client.secondPage)
+                    enterFolder(client, target)
+                    finishFileCommandFlow(target, server, client, hacker, console, info)
+                end)
+            end
+        end
+    end
+
+    for _, target in ipairs(kinds) do
+        test("available file command in " .. target.folder .. " retains its authorized completion flow", function()
+            finishFileCommandFlow(target, openFileCommandFlow(target))
+        end)
+
+        test("available file command in " .. target.folder .. " still cannot complete before the server delay", function()
+            local server, client, hacker, console, info = openFileCommandFlow(target)
+            client.command(completeCommand(target))
+            if target.timer then client.fireTimer(target.timer) end
+            local packet = assert(client.lastMessage(target.message))
+            server.now = target.timer and 3.99 or 1.99
+            server.receive(packet.name, hacker, unpackValues(packet.values))
+            equal(console.removed, nil); equal(info.inUse, false)
+            equal(server.lastMessage("SlicerCompleted"), nil); equal(#client.chatMessages, 0)
+            if target.folder == "tools" then equal(console.SlicerDoor.inputs[#console.SlicerDoor.inputs], "Lock") end
+            client.assertClosed()
+        end)
+    end
+
+    test("unavailable file command typo retains the ordinary error", function()
+        local server, client, _, console, info = openFileCommandFlow(kinds[2], kinds[1])
+        local entry = activeEntry(client)
+        local sent, events = #client.messages, #client.timerEvents
+        local command = completeCommand(kinds[1]) .. "-typo"
+        client.command(command)
+        equal(entry.placeholder, "[ERROR] - INCORRECT COMMAND"); equal(entry:GetValue(), "")
+        equal(entry.editable, true); equal(entry.History[#entry.History], command)
+        client.fire("Think")
+        equal(entry.placeholder, "[ERROR] - INCORRECT COMMAND")
+        equal(#client.messages, sent); equal(#client.timerEvents, events)
+        equal(console.removed, nil); equal(info.inUse, true)
+        equal(server.lastMessage("SlicerCompleted"), nil)
+        client.receive("PlayerDied", nil); client.assertClosed()
+    end)
+
     for _, stage in ipairs({"login", "folders", "data", "server", "tools"}) do
         local targets = (stage == "login" or stage == "folders") and {kinds[1]} or kinds
         for _, target in ipairs(targets) do

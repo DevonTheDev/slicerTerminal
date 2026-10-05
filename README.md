@@ -68,6 +68,13 @@ The Commands window belongs to its terminal page and closes when that page or
 session closes. Commands still run through the existing command handlers and
 server checks; help and history do not automatically execute a recalled command.
 
+If you submit the target file's download or tool command from a folder that does
+not contain it, the entry shows **[ERROR] - FILE NOT HERE (/help)**. The draft is
+cleared, the entry stays editable, and the submission remains in history. Use
+Help and its Return command to choose another folder. The refusal starts no
+countdown and sends no completion request; it does not reveal the correct folder
+or run another command for you.
+
 Downloads take the configured login delay plus a second download delay. Tools
 require the login delay. Successful completion consumes the terminal. Removing
 or completing a linked terminal unlocks its own door. Completion feedback appears
