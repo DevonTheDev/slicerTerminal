@@ -35,6 +35,13 @@ For a terminal named `terminal` and file named `secret`:
 | Run a door tool | `/r{_tools}/secret.exe` |
 | Quit from login/folder selection | `/q[terminal]` |
 
+Click **Quit terminal** on any terminal page to leave immediately, including
+during a login or download countdown. It closes Commands too, cancels the
+pending local countdown, and asks the server to release your reservation. The
+terminal remains available for another attempt, and a linked door stays locked.
+Starting again begins a fresh login; there is no saved partial progress. Quitting
+cannot undo a completion request that was already sent.
+
 ### Command assistance
 
 Click **Commands (/help)** or enter `/help` to open a scrollable reference for
@@ -120,6 +127,14 @@ hidden/deletion-marked panels and stale callbacks after a page is reused. They
 also run the inserted-command paths through the actual client/server handlers.
 The host doubles do not certify native focus transfer, caret placement or layout.
 
+Quit-control tests exercise actual client callbacks and server reservation
+release on every page and during countdowns. They cover help/timer cleanup,
+repeated clicks and retired page/session callbacks, including reopening the
+same terminal. These client guards prevent stale local controls from quitting a
+later session; they do not add session tokens or network replay protection to
+the existing quit protocol. Native button input and rendering still need the
+smoke checks below.
+
 The original client source uses CRLF line endings, which this change preserves.
 To check whitespace without treating CRLF as trailing whitespace:
 
@@ -145,6 +160,10 @@ emulated. Before a live rollout, use a test server to check:
 - With two players, confirm only one can enter a terminal at a time
 - Quit, die during login/download, disconnect, and remove an occupied terminal;
   confirm its UI closes and another player can use any surviving terminal
+- Click Quit terminal before login, during each countdown, from folder selection
+  and from all three folders, with Commands both open and closed. Confirm the
+  button remains reachable, no success appears, the linked door stays locked,
+  and reopening starts a fresh login
 - Strip or switch away from the hacking tool during each completion flow;
   confirm no success is printed, the terminal remains available and another
   player can use it. Re-equip and retry normally

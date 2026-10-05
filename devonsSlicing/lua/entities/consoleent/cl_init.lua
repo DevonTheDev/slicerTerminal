@@ -2,6 +2,8 @@ include("entities/consoleent/shared.lua")
 
 local COMMAND_PROMPT = "Run commands here... (/help | Up/Down history)"
 local commandHelpFrame, commandHelpOwner
+local activeTerminalSession
+local closeConsoleUI
 
 local function closeCommandHelp()
     if IsValid(commandHelpFrame) and not commandHelpFrame:IsMarkedForDeletion() then commandHelpFrame:Remove() end
@@ -38,7 +40,24 @@ local function isLiveCommandPanel(panel)
     return IsValid(panel) and not panel:IsMarkedForDeletion() and panel:IsVisible()
 end
 
-local function configureCommandAssistance(input, parent, info, stage, history)
+-- The server authenticates the sender, not the legacy payload entities. Only
+-- callbacks belonging to this live local session/page may send its quit packet.
+local function quitTerminal(session, page)
+    if activeTerminalSession ~= session or not isLiveCommandPanel(page) then return end
+    closeConsoleUI()
+    net.Start("playerQuitConsole")
+        net.WriteEntity(session.player)
+        net.WriteEntity(session.console)
+    net.SendToServer()
+end
+
+local function configureCommandAssistance(input, parent, info, stage, history, session)
+    input.IsCurrentTerminalPage = function()
+        return activeTerminalSession == session and isLiveCommandPanel(parent) and isLiveCommandPanel(input)
+    end
+    input.QuitTerminal = function()
+        if input.IsCurrentTerminalPage() then quitTerminal(session, parent) end
+    end
     input:SetHistoryEnabled(true)
     input.History = history
     input.HistoryPos = 0
@@ -108,10 +127,17 @@ local function configureCommandAssistance(input, parent, info, stage, history)
     button:SetPos(5, ScrH() - 140)
     button:SetText("Commands (/help)")
     button.DoClick = input.ShowCommandHelp
+    local quit = vgui.Create("DButton", parent)
+    quit:SetSize(160, 30)
+    quit:SetPos(175, ScrH() - 140)
+    quit:SetText("Quit terminal")
+    quit.DoClick = function()
+        if isLiveCommandPanel(quit) then quitTerminal(session, parent) end
+    end
 end
 
 local function handleCommandAssistance(input)
-    if not IsValid(input) then return true end
+    if not IsValid(input) or not input.IsCurrentTerminalPage() then return true end
     local value = input:GetValue()
     if string.Trim(value) ~= "" and #value <= 512 then
         input:AddHistory(value)
@@ -131,7 +157,8 @@ end
 -- A terminal has several independent frames, timers and Think hooks. Tear all
 -- of them down together so death, quitting and completion cannot leave a timer
 -- reopening a closed terminal or updating a removed panel.
-local function closeConsoleUI()
+closeConsoleUI = function()
+    activeTerminalSession = nil -- Retire ownership before Remove hooks can reenter.
     closeCommandHelp()
     for _, panel in pairs({firstPage, secondPage, insideData, insideServer, insideTools}) do
         if IsValid(panel) then panel:Remove() end
@@ -348,6 +375,9 @@ net.Receive("ServerSendsEntityInformation", function() -- Frames open
     local upperBound = 7
     local lowerBound = 3
 if(!consoleInfo["inUse"]) then
+    closeConsoleUI()
+    local terminalSession = {player = callingPlayer, console = usedConsole}
+    activeTerminalSession = terminalSession
 
     surface.PlaySound("code_welcome.wav")
 
@@ -432,7 +462,7 @@ if(!consoleInfo["inUse"]) then
    inputTerminal1:SetTextColor(Color(36, 209, 36, 255))
    inputTerminal1:SetPaintBackground(false)
    inputTerminal1:SetCursorColor(Color(36, 209, 36, 255))
-   configureCommandAssistance(inputTerminal1, firstPage, consoleInfo, "login", commandHistory)
+   configureCommandAssistance(inputTerminal1, firstPage, consoleInfo, "login", commandHistory, terminalSession)
 
    inputTerminal1.OnGetFocus = function(self) -- Clears the text when the player clicks on the box
        self:SetPlaceholderText("")
@@ -451,11 +481,7 @@ This code checks to see if the entered value is equal to the quit command, and t
 
        -- Quits the console
        if(string.lower(inputTerminal1:GetValue()) == "/q[" .. consoleInfo["name"] .. "]") then
-           closeConsoleUI()
-           net.Start("playerQuitConsole")
-               net.WriteEntity(callingPlayer)
-               net.WriteEntity(usedConsole)
-           net.SendToServer()
+           inputTerminal1.QuitTerminal()
            return
        end
 
@@ -555,7 +581,7 @@ This code sets up the second page of the console
                inputTerminal2:SetTextColor(Color(36, 209, 36, 255))
                inputTerminal2:SetPaintBackground(false)
                inputTerminal2:SetCursorColor(Color(36, 209, 36, 255))
-               configureCommandAssistance(inputTerminal2, secondPage, consoleInfo, "folders", commandHistory)
+               configureCommandAssistance(inputTerminal2, secondPage, consoleInfo, "folders", commandHistory, terminalSession)
 
                inputTerminal2.OnGetFocus = function(self) -- Clears the text when the player clicks on the box
                    self:SetPlaceholderText("")
@@ -704,7 +730,7 @@ local filenames = {
                        dataInputTerminal:SetTextColor(Color(36, 209, 36, 255))
                        dataInputTerminal:SetPaintBackground(false)
                        dataInputTerminal:SetCursorColor(Color(36, 209, 36, 255))
-                       configureCommandAssistance(dataInputTerminal, insideData, consoleInfo, "data", commandHistory)
+                       configureCommandAssistance(dataInputTerminal, insideData, consoleInfo, "data", commandHistory, terminalSession)
 
                        dataInputTerminal.OnGetFocus = function(self) -- Clears the text when the player clicks on the box
                            self:SetPlaceholderText("")
@@ -884,7 +910,7 @@ local filenames = {
                        serverInputTerminal:SetTextColor(Color(36, 209, 36, 255))
                        serverInputTerminal:SetPaintBackground(false)
                        serverInputTerminal:SetCursorColor(Color(36, 209, 36, 255))
-                       configureCommandAssistance(serverInputTerminal, insideServer, consoleInfo, "server", commandHistory)
+                       configureCommandAssistance(serverInputTerminal, insideServer, consoleInfo, "server", commandHistory, terminalSession)
 
                        serverInputTerminal.OnGetFocus = function(self) -- Clears the text when the player clicks on the box
                            self:SetPlaceholderText("")
@@ -1064,7 +1090,7 @@ local filenames = {
                        toolsInputTerminal:SetTextColor(Color(36, 209, 36, 255))
                        toolsInputTerminal:SetPaintBackground(false)
                        toolsInputTerminal:SetCursorColor(Color(36, 209, 36, 255))
-                       configureCommandAssistance(toolsInputTerminal, insideTools, consoleInfo, "tools", commandHistory)
+                       configureCommandAssistance(toolsInputTerminal, insideTools, consoleInfo, "tools", commandHistory, terminalSession)
 
                        toolsInputTerminal.OnGetFocus = function(self) -- Clears the text when the player clicks on the box
                            self:SetPlaceholderText("")
@@ -1116,11 +1142,7 @@ local filenames = {
 
                    -- Quits the console
                    if(string.lower(inputTerminal2:GetValue()) == "/q[" .. consoleInfo["name"] .. "]") then
-                       closeConsoleUI()
-                       net.Start("playerQuitConsole")
-                            net.WriteEntity(callingPlayer)
-                            net.WriteEntity(usedConsole)
-                        net.SendToServer()
+                       inputTerminal2.QuitTerminal()
                         return
                    end
 
