@@ -34,6 +34,17 @@ local function hasHackingTool(ply)
     return IsValid(weapon) and weapon:GetClass() == "weapon_hacking"
 end
 
+local function canLinkConsole(ply, console)
+    if not IsValid(console) or console:GetClass() ~= "consoleent" or console.SlicerCreator ~= ply then return false end
+    local information = console.SlicerInformation
+    -- A removed door still counts as a previous assignment. This is selection
+    -- of a never-linked console, not permission to redirect an existing hack.
+    return information and information.fileType == "tools"
+        and console.SlicerDoor == nil and not information.inUse
+end
+
+local selectionInstruction = "Look at one of your configured, never-linked tools consoles and type !setEntity to select it."
+
 function ENT:Initialize()
     self:SetModel(returnEntityModel())
     self:SetSolid(SOLID_BBOX)
@@ -61,7 +72,9 @@ function ENT:AcceptInput(name, activator, caller)
     local information = self.SlicerInformation
     if not information then return end
     if information.fileType == "tools" and not IsValid(self.SlicerDoor) then
-        activator:ChatPrint("This console does not have a linked door yet.")
+        local message = "This console does not have a linked door yet."
+        if canLinkConsole(activator, self) then message = message .. " " .. selectionInstruction end
+        activator:ChatPrint(message)
         return
     end
     if information.inUse or sessions[activator] then
@@ -108,15 +121,31 @@ net.Receive("ServerWaitingForEntity", function() end)
 
 hook.Add("PlayerSay", "doesThePlayerSetAnEntity", function(ply, text)
     if text ~= "!setEntity" then return end
+    local target = ply:GetEyeTrace().Entity
+    if IsValid(target) and target:GetClass() == "consoleent" then
+        if not canLinkConsole(ply, target) then
+            ply:ChatPrint("That console cannot be selected. " .. selectionInstruction .. " It must not be in use.")
+            return
+        end
+        ply.SlicerPendingConsole = target
+        ply:ChatPrint("Selected '" .. target.SlicerInformation.name .. "'. Look at a func_door and type !setEntity to link it.")
+        return ""
+    end
+
     local console = ply.SlicerPendingConsole
-    if not IsValid(console) or console.SlicerCreator ~= ply then return end
-    local door = ply:GetEyeTrace().Entity
+    -- Recheck every condition at the final link, including setup's automatic
+    -- selection. Rejected targets never replace the current pending choice.
+    if not canLinkConsole(ply, console) then
+        ply:ChatPrint(selectionInstruction)
+        return
+    end
+    local door = target
     if not IsValid(door) or door:GetClass() ~= "func_door" then
-        ply:ChatPrint("That is not a valid door object.")
+        ply:ChatPrint("That is not a valid door object. Look at a func_door and type !setEntity to retry.")
         return
     end
     if IsValid(linkedDoors[door]) then
-        ply:ChatPrint("That door is already linked to a console.")
+        ply:ChatPrint("That door is already linked to a console. Look at another func_door and type !setEntity to retry.")
         return
     end
     console.SlicerDoor = door

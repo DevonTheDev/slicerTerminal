@@ -14,10 +14,17 @@ and terminal-driven downloads or door unlocking.
    **Done** reads the current fields, including the active text entry. Invalid
    fields keep the form open so they can be corrected; each new form starts
    without values from previous setups.
-3. For a `tools` terminal, its creator should look at a `func_door` and type
-   `!setEntity` in chat before anyone uses that terminal. Each terminal has its
-   own door; a door cannot be attached to two live terminals. Set up and link
-   tools terminals one at a time for each creator.
+3. Setting up a `tools` terminal selects it for its creator. Look at a
+   `func_door` and type `!setEntity` in chat to link it before anyone uses it.
+   To choose another of your configured tools terminals, look at that terminal
+   and type `!setEntity`; the confirmation names your selection. Then look at
+   its intended door and type `!setEntity` again. This also recovers an older
+   terminal after you set up or remove a newer one. Selection requires a
+   terminal that has **never been linked** and is not in use. A prior link
+   remains ineligible even if its door was removed. Invalid choices preserve
+   your pending selection so you can retry. Each terminal has its own door;
+   a door cannot be attached to two live terminals. Using an unlinked terminal
+   only gives guidance and does not select it.
 4. Equip **Devons Hacking Tool** and use the console. Primary and secondary
    attack are disabled; right-click must not fire the inherited base weapon. Its
    callable `ShouldDropOnDie` hook returns false, overriding the base weapon
@@ -142,6 +149,13 @@ later session; they do not add session tokens or network replay protection to
 the existing quit protocol. Native button input and rendering still need the
 smoke checks below.
 
+Reselection tests relay actual client setup packets into the server callbacks
+and exercise `!setEntity`, Use and completion. They cover same-creator terminals
+linked in either order, removal recovery, independent creators, invalid targets,
+retry, immutable configuration, prior door assignments and final-link eligibility
+changes. Active hacks cannot be redirected, including after their door is removed.
+The doubles do not certify native chat delivery or eye-trace targeting.
+
 The original client source uses CRLF line endings, which this change preserves.
 To check whitespace without treating CRLF as trailing whitespace:
 
@@ -183,6 +197,12 @@ emulated. Before a live rollout, use a test server to check:
   each terminal type normally
 - Link two tools terminals to different doors; finishing one must leave the
   other door locked, and using unrelated entities must still work
+- With one creator, set up Alpha and Beta before linking either. Look at Alpha
+  and type `!setEntity`, then look at its door and type it again; repeat for Beta
+  and reverse the order. Remove pending Beta and reselect Alpha in a fresh pair
+- Try another creator's terminal, a linked terminal (including one whose door
+  was removed), a non-tools terminal and an already-claimed door; confirm no
+  selection or door changes, then retry with an eligible terminal and door
 - Check fonts, sounds and layouts at the clients' screen resolutions
 
 Use a fresh server session when deploying server-logic changes; live Lua
