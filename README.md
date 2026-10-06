@@ -43,6 +43,18 @@ does not submit another console's configuration, release an active hack or
 change a pending door selection. Once **Done** configures a console, Use follows
 the normal hacking flow; this does not make saved configurations editable.
 
+### Setup screen size
+
+The setup form lays out its four inputs, **Set up later** and **Done** in one
+centered column when it opens. At initial viewport sizes of 640×480 or larger,
+all six controls fit with 48-pixel heights and 12-pixel gaps. The column is at
+most 400 pixels wide and leaves at least 20-pixel screen margins. This applies
+to newly spawned, deferred and copied unconfigured consoles.
+
+These dimensions describe initial-open geometry. An already open form does not
+relayout when the display size changes. Native rendering, mouse hit-testing,
+dropdown placement and font fit still need the Garry's Mod smoke checks below.
+
 ### Copy a configured console
 
 Use the ordinary Garry's Mod Duplicator to copy and paste a configured terminal.
@@ -208,6 +220,15 @@ the existing hack/door flows. They check duplicate-form focus, independent
 terminals, retired callbacks and creator ownership. Native focus transfer,
 button layout and world Use targeting still need a server/client smoke check.
 
+Setup-layout tests execute the actual setup receiver with test-local rectangle
+recording at 640×480, 800×600, 1024×600, 1280×720, 1366×768 and 1920×1080. They
+check visible control heights, margins, centered row order and gaps without
+overlap, plus duplicate-open draft retention, independent forms, deferral and
+stale buttons. Deferred and unconfigured-copy submissions are relayed through
+the actual server's creator and first-write validation. The geometry model does
+not certify native rendering, mouse hit-testing, dropdowns, font dimensions,
+tab order or display resizing; the shared panel doubles remain unchanged.
+
 The original client source uses CRLF line endings, which this change preserves.
 To check whitespace without treating CRLF as trailing whitespace:
 
@@ -224,6 +245,10 @@ emulated. Before a live rollout, use a test server to check:
 - Spawn/configure one terminal of each type and complete their command flows
 - Edit the final setup field and click Done directly; repeat with a new console
   and confirm the new form cannot submit values from the previous one
+- Open setup at 640×480, 800×600, 1024×600, 1280×720, 1366×768 and 1920×1080.
+  Check that all four inputs and both actions are visible and clickable, the
+  folder dropdown opens within reach, and placeholders and text fit the fonts.
+  Reopen an already visible form and check its draft and focus are retained
 - Choose Set up later, then use the unconfigured console without the hacking
   tool and finish a fresh setup. Confirm another player cannot reopen it; reopen
   an already visible setup and check its typing and focus are retained

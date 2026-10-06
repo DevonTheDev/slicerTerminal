@@ -276,16 +276,12 @@ net.Receive("PlayerSpawnedConsole", function()
     fileType:AddChoice("data", nil, false, nil)
     fileType:AddChoice("server", nil, false, nil)
     fileType:AddChoice("tools", nil, false, nil)
-    fileType:SetSize(200, 100)
-    fileType:Center()
 
     -- Allows the spawner to give the console a name
     local consoleNameFrame = vgui.Create("DTextEntry", initialParent)
     consoleNameFrame:AllowInput(true)
     consoleNameFrame:SetPlaceholderText("Enter Console Name Here")
     consoleNameFrame:SetPlaceholderColor(Color(150, 150, 150, 200))
-    consoleNameFrame:SetSize(200, 100)
-    consoleNameFrame:SetPos(fileType:GetX(), fileType:GetY() - 200)
     consoleNameFrame:SetTextColor(Color(0, 0, 0, 255))
 
     -- Allows the spawner to give the time for the slice
@@ -293,8 +289,6 @@ net.Receive("PlayerSpawnedConsole", function()
     slicerTime:AllowInput(true)
     slicerTime:SetPlaceholderText("Enter Slice Time here (Seconds)")
     slicerTime:SetPlaceholderColor(Color(150, 150, 150, 200))
-    slicerTime:SetSize(200, 100)
-    slicerTime:SetPos(fileType:GetX(), fileType:GetY() - 100)
     slicerTime:SetTextColor(Color(0, 0, 0, 255))
 
     -- Allows the spawner to name the file
@@ -302,8 +296,6 @@ net.Receive("PlayerSpawnedConsole", function()
     fileName:AllowInput(true)
     fileName:SetPlaceholderText("Enter File Name here (No extension)")
     fileName:SetPlaceholderColor(Color(150, 150, 150, 200))
-    fileName:SetSize(200, 100)
-    fileName:SetPos(fileType:GetX(), fileType:GetY() + 100)
     fileName:SetTextColor(Color(0, 0, 0, 255))
 
 --[[/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -316,8 +308,6 @@ net.Receive("PlayerSpawnedConsole", function()
 
     -- Adds a finish button that assigns the values to the variables and runs a check on the file type
     local finishButton = vgui.Create("DButton", initialParent)
-    finishButton:SetSize(200, 100)
-    finishButton:SetPos(fileType:GetX(), fileType:GetY() + 300)
     finishButton:SetText("Done")
     function finishButton.DoClick()
         if not isCurrentSetup() or not IsValid(callingPlayer)
@@ -355,15 +345,23 @@ net.Receive("PlayerSpawnedConsole", function()
         end
     end
 
-    -- Use the existing gap above Done so the form needs no extra screen height.
+    -- Local dismissal keeps this console available for a fresh setup later.
     local laterButton = vgui.Create("DButton", initialParent)
-    laterButton:SetSize(200, 60)
-    laterButton:SetPos(fileType:GetX(), fileType:GetY() + 220)
     laterButton:SetText("Set up later")
     function laterButton.DoClick()
         if not isCurrentSetup() then return end
         retireSetup()
         initialParent:Close() -- Setup-only dismissal must not quit another hack.
+    end
+
+    -- Initial-open geometry only; repeated Use retains these controls and drafts.
+    local controlHeight, controlGap = 48, 12
+    local columnWidth = math.min(400, ScrW() - 40)
+    local columnHeight = controlHeight * 6 + controlGap * 5
+    local columnX, columnY = (ScrW() - columnWidth) / 2, (ScrH() - columnHeight) / 2
+    for index, control in ipairs({consoleNameFrame, slicerTime, fileType, fileName, laterButton, finishButton}) do
+        control:SetSize(columnWidth, controlHeight)
+        control:SetPos(columnX, columnY + (index - 1) * (controlHeight + controlGap))
     end
 end)
 
