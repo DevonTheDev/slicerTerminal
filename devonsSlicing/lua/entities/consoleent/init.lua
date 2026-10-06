@@ -53,6 +53,53 @@ function ENT:Initialize()
     self:SetName("DevonsConsoleEntity" .. self:GetCreationID())
 end
 
+function ENT:OnEntityCopyTableFinish(data)
+    -- Replace this table rather than editing inUse on an aliased live original.
+    data.SlicerInformation = normalizeSlicerInformation(data.SlicerInformation)
+    data.SlicerCreator, data.SlicerDoor = nil, nil
+end
+
+local function resetCopiedState(console)
+    console.SlicerCreator, console.SlicerDoor = nil, nil
+    console.SlicerInformation = normalizeSlicerInformation(console.SlicerInformation)
+    if IsValid(console) then
+        console:SetName("DevonsConsoleEntity" .. console:GetCreationID())
+    end
+end
+
+function ENT:OnDuplicated()
+    -- Generic restoration precedes this hook; modifiers run afterward. Remove
+    -- copied authority before a modifier can remove the newly spawned entity.
+    resetCopiedState(self)
+end
+
+function ENT:PostEntityPaste(ply)
+    if not IsValid(self) then return end
+    -- Modifiers may have restored legacy fields. Revalidate and clear again,
+    -- even on invalid-actor paths, before rejecting only this new entity.
+    resetCopiedState(self)
+    if not IsValid(ply) or not ply:IsPlayer() then
+        self:Remove()
+        return
+    end
+    self.SlicerCreator = ply
+
+    -- Rebuild only this entity's record, without reusing a copied table or
+    -- appending duplicates if another paste hook already registered it.
+    for i = #spawnedEntities, 1, -1 do
+        if spawnedEntities[i].entity == self then table.remove(spawnedEntities, i) end
+    end
+    local information = self.SlicerInformation
+    if information then
+        table.insert(spawnedEntities, {entityName = self:GetName(), entity = self, information = information})
+        if information.fileType == "tools" then
+            ply:ChatPrint("Copied tools console is unlinked. Look at it and type !setEntity, then look at a func_door and type !setEntity to link it.")
+        end
+    else
+        ply:ChatPrint("Copied console needs setup. Use it to configure it.")
+    end
+end
+
 local function openSetup(ply, ent)
     if not IsValid(ply) or not ply:IsPlayer() or not ply:Alive() then return end
     net.Start("PlayerSpawnedConsole")
@@ -220,7 +267,7 @@ function ENT:OnRemove()
     for ply, session in pairs(sessions) do
         if session.console == self then releaseSession(ply, true) end
     end
-    if IsValid(self.SlicerDoor) then
+    if IsValid(self.SlicerDoor) and linkedDoors[self.SlicerDoor] == self then
         linkedDoors[self.SlicerDoor] = nil
         self.SlicerDoor:Fire("Unlock")
     end

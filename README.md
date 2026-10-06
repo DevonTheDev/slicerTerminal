@@ -43,6 +43,40 @@ does not submit another console's configuration, release an active hack or
 change a pending door selection. Once **Done** configures a console, Use follows
 the normal hacking flow; this does not make saved configurations editable.
 
+### Copy a configured console
+
+Use the ordinary Garry's Mod Duplicator to copy and paste a configured terminal.
+Each pasted copy keeps its validated name, filename, folder and delay, receives
+a fresh engine identity, and belongs to the pasting player. It starts idle with
+an independent configuration, even when the original is being hacked. Copying
+does not close the original session or change anyone's pending door selection.
+
+Data and server copies can be used normally. Every tools copy starts unlinked,
+including when a door was included in the copied group. Follow the paste notice:
+look at the new console and enter `!setEntity`, then look at the intended
+`func_door` and enter it again. A door still linked to the original remains
+unavailable. Removing, undoing or completing the unlinked copy cannot unlock
+the original's registered door.
+
+An unconfigured source, or invalid copied settings, produces an unconfigured
+copy. Its new creator can Use it for fresh setup without a hacking tool. No
+reservation, completion deadline, old creator authority or door link is restored.
+Pasting without a valid player removes only the new copy; automatic save/map
+restoration without a player is outside this workflow.
+
+These hooks follow Facepunch's documented
+[copy-table](https://wiki.facepunch.com/gmod/ENTITY:OnEntityCopyTableFinish),
+[early duplication](https://wiki.facepunch.com/gmod/ENTITY:OnDuplicated) and
+[post-paste](https://wiki.facepunch.com/gmod/ENTITY:PostEntityPaste) contracts.
+The server's existing duplicator permissions and creator-only setup/linking
+rules still apply. Third-party duplicators and protection addons need their own
+native compatibility check.
+
+Deploy server changes into a fresh server session. Door cleanup requires the
+current server's registered link owner; an old or foreign pointer alone does
+not grant unlock authority. Live Lua refresh can lose that registry while
+retaining entity pointers, so this does not migrate old links or active sessions.
+
 For a terminal named `terminal` and file named `secret`:
 
 | Action | Command |
@@ -200,6 +234,15 @@ emulated. Before a live rollout, use a test server to check:
 - In a test gamemode that enables weapon drops on death, verify the hacking tool
   is not dropped and its death hook raises no Lua error
 - With two players, confirm only one can enter a terminal at a time
+- With two players, duplicate each configured terminal type, including while the
+  original is occupied. Check independent configuration and new creator ownership;
+  removing or undoing the copy must leave the original session and door intact
+- Paste multiple tools copies, then select and relink each explicitly. Verify
+  that copying a door in the same group does not link it automatically, and that
+  the original's claimed door remains unavailable. Complete a newly linked copy
+  and confirm only its own door unlocks
+- Duplicate an unconfigured console and finish setup as the paster; check a
+  copy-of-copy and native engine names/cleanup under the server's protection rules
 - Quit, die during login/download, disconnect, and remove an occupied terminal;
   confirm its UI closes and another player can use any surviving terminal
 - Click Quit terminal before login, during each countdown, from folder selection
