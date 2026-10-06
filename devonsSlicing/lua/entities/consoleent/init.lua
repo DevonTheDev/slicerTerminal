@@ -44,6 +44,8 @@ local function canLinkConsole(ply, console)
 end
 
 local selectionInstruction = "Look at one of your configured, never-linked tools consoles and type !setEntity to select it."
+local supportedDoors = {func_door = true, func_door_rotating = true}
+local doorClassNames = "func_door or func_door_rotating"
 
 function ENT:Initialize()
     self:SetModel(returnEntityModel())
@@ -93,7 +95,7 @@ function ENT:PostEntityPaste(ply)
     if information then
         table.insert(spawnedEntities, {entityName = self:GetName(), entity = self, information = information})
         if information.fileType == "tools" then
-            ply:ChatPrint("Copied tools console is unlinked. Look at it and type !setEntity, then look at a func_door and type !setEntity to link it.")
+            ply:ChatPrint("Copied tools console is unlinked. Look at it and type !setEntity, then look at a " .. doorClassNames .. " and type !setEntity to link it.")
         end
     else
         ply:ChatPrint("Copied console needs setup. Use it to configure it.")
@@ -185,7 +187,7 @@ hook.Add("PlayerSay", "doesThePlayerSetAnEntity", function(ply, text)
             return
         end
         ply.SlicerPendingConsole = target
-        ply:ChatPrint("Selected '" .. target.SlicerInformation.name .. "'. Look at a func_door and type !setEntity to link it.")
+        ply:ChatPrint("Selected '" .. target.SlicerInformation.name .. "'. Look at a " .. doorClassNames .. " and type !setEntity to link it.")
         return ""
     end
 
@@ -197,12 +199,12 @@ hook.Add("PlayerSay", "doesThePlayerSetAnEntity", function(ply, text)
         return
     end
     local door = target
-    if not IsValid(door) or door:GetClass() ~= "func_door" then
-        ply:ChatPrint("That is not a valid door object. Look at a func_door and type !setEntity to retry.")
+    if not IsValid(door) or not supportedDoors[door:GetClass()] then
+        ply:ChatPrint("That is not a valid door object. Look at a " .. doorClassNames .. " and type !setEntity to retry.")
         return
     end
     if IsValid(linkedDoors[door]) then
-        ply:ChatPrint("That door is already linked to a console. Look at another func_door and type !setEntity to retry.")
+        ply:ChatPrint("That door is already linked to a console. Look at another " .. doorClassNames .. " and type !setEntity to retry.")
         return
     end
     console.SlicerDoor = door

@@ -15,7 +15,8 @@ and terminal-driven downloads or door unlocking.
    fields keep the form open so they can be corrected; each new form starts
    without values from previous setups.
 3. Setting up a `tools` terminal selects it for its creator. Look at a
-   `func_door` and type `!setEntity` in chat to link it before anyone uses it.
+   `func_door` or `func_door_rotating` and type `!setEntity` in chat to link it
+   before anyone uses it.
    To choose another of your configured tools terminals, look at that terminal
    and type `!setEntity`; the confirmation names your selection. Then look at
    its intended door and type `!setEntity` again. This also recovers an older
@@ -29,6 +30,20 @@ and terminal-driven downloads or door unlocking.
    attack are disabled; right-click must not fire the inherited base weapon. Its
    callable `ShouldDropOnDie` hook returns false, overriding the base weapon
    policy without replacing the method with a boolean.
+
+### Link sliding or rotating brush doors
+
+Tools terminals can link to sliding brush doors (`func_door`) and rotating brush
+doors (`func_door_rotating`). The same selection, hacking and cleanup workflow
+applies to both: a link locks that exact door, and accepted completion or removal
+of its registered terminal unlocks it. Sliding and rotating links can coexist
+independently. A copied tools terminal still needs an explicit fresh link.
+
+Support follows Valve's [shared brush-door implementation](https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/server/doors.cpp)
+and Facepunch's [map-input API](https://wiki.facepunch.com/gmod/Entity:Fire).
+`prop_door_rotating` remains unsupported; its separate master/slave behavior
+needs native paired-door checks. Actual GMod lock/use behavior, map outputs and
+protection-addon compatibility still require the smoke checks below.
 
 ### Set up a console later
 
@@ -66,7 +81,7 @@ does not close the original session or change anyone's pending door selection.
 Data and server copies can be used normally. Every tools copy starts unlinked,
 including when a door was included in the copied group. Follow the paste notice:
 look at the new console and enter `!setEntity`, then look at the intended
-`func_door` and enter it again. A door still linked to the original remains
+`func_door` or `func_door_rotating` and enter it again. A door still linked to the original remains
 unavailable. Removing, undoing or completing the unlinked copy cannot unlock
 the original's registered door.
 
@@ -215,6 +230,12 @@ retry, immutable configuration, prior door assignments and final-link eligibilit
 changes. Active hacks cannot be redirected, including after their door is removed.
 The doubles do not certify native chat delivery or eye-trace targeting.
 
+Rotating-door tests relay real client setup and tools commands into the server,
+then check linking, reservations, minimum delay, completion and cleanup against
+both supported classes. They also cover mixed links, refused prop/arbitrary
+targets, pending-selection recovery and copy isolation. Engine I/O is recorded
+by doubles; the tests do not emulate a moving door.
+
 Deferred-setup tests follow spawn, local dismissal, creator Use, configuration and
 the existing hack/door flows. They check duplicate-form focus, independent
 terminals, retired callbacks and creator ownership. Native focus transfer,
@@ -259,6 +280,8 @@ emulated. Before a live rollout, use a test server to check:
 - In a test gamemode that enables weapon drops on death, verify the hacking tool
   is not dropped and its death hook raises no Lua error
 - With two players, confirm only one can enter a terminal at a time
+- Link separate sliding and rotating brush doors. Check native Lock, blocked Use,
+  timed tool completion, Unlock and removal, including each map's door outputs
 - With two players, duplicate each configured terminal type, including while the
   original is occupied. Check independent configuration and new creator ownership;
   removing or undoing the copy must leave the original session and door intact
