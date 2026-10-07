@@ -430,6 +430,171 @@ net.Receive("PlayerSpawnedConsole", function()
     end
 end)
 
+-- Configured-console edits are independent of initial setup and hacking sessions.
+-- The server owns each ticket; the client only keeps its current visible form.
+local setupEditForms, setupEditTokens = {}, {}
+
+net.Receive("SlicerSetupEditOpen", function()
+    local console = net.ReadEntity()
+    local callingPlayer = net.ReadEntity()
+    local token = net.ReadString()
+    local information = net.ReadTable()
+    if not IsValid(console) or not IsValid(callingPlayer) or not callingPlayer:IsPlayer()
+        or not callingPlayer:Alive() or token == "" then return end
+
+    local previous = setupEditForms[console]
+    if previous and previous.token == token and previous.isCurrent() then
+        previous.frame:MakePopup()
+        previous.frame:MoveToFront()
+        return -- Preserve focused drafts and pending submissions on repeated opens.
+    end
+    if previous then previous.close() end
+    if type(information) ~= "table" or type(information.name) ~= "string"
+        or type(information.fileName) ~= "string" or type(information.delay) ~= "number"
+        or (information.fileType ~= "data" and information.fileType ~= "server" and information.fileType ~= "tools") then return end
+
+    local frame = vgui.Create("DFrame")
+    local edit = {frame = frame, token = token, pending = false, retired = false}
+    setupEditForms[console], setupEditTokens[token] = edit, edit
+    function edit.isCurrent()
+        return not edit.retired and setupEditForms[console] == edit
+            and setupEditTokens[token] == edit and isLiveCommandPanel(frame)
+    end
+    local function retire(cancel)
+        if edit.retired then return end
+        edit.retired = true -- Retire before any native cleanup or network send.
+        if setupEditForms[console] == edit then setupEditForms[console] = nil end
+        if setupEditTokens[token] == edit then setupEditTokens[token] = nil end
+        if cancel then
+            net.Start("SlicerSetupEditCancel")
+                net.WriteEntity(console)
+                net.WriteString(token)
+            net.SendToServer()
+        end
+    end
+    -- Native removal is deferred. Wrap both entry points so stale callbacks
+    -- cannot submit or acknowledge during the interval before OnRemove runs.
+    local nativeClose, nativeRemove = frame.Close, frame.Remove
+    function frame:Close()
+        retire(true)
+        return nativeClose(self)
+    end
+    function frame:Remove()
+        retire(true)
+        return nativeRemove(self)
+    end
+    frame.OnClose = function() retire(true) end
+    frame.OnRemove = function() retire(true) end
+    function edit.close()
+        retire(true)
+        if IsValid(frame) and not frame:IsMarkedForDeletion() then frame:Close() end
+    end
+
+    local width, height = math.min(460, ScrW() - 40), 430
+    frame:SetSize(width, height)
+    frame:Center()
+    frame:SetTitle("Edit console settings")
+    frame:SetDeleteOnClose(true)
+    frame:SetDraggable(false)
+    frame:ShowCloseButton(true)
+    frame:MakePopup()
+
+    local function label(text, y, labelHeight)
+        local panel = vgui.Create("DLabel", frame)
+        panel:SetFont("HackingFont")
+        panel:SetTextColor(Color(220, 220, 220, 255))
+        panel:SetText(text)
+        panel:SetWrap(true)
+        panel:SetPos(20, y)
+        panel:SetSize(width - 40, labelHeight or 20)
+        return panel
+    end
+    local function entry(title, value, y)
+        label(title, y)
+        local panel = vgui.Create("DTextEntry", frame)
+        panel:SetText(tostring(value))
+        panel:SetPos(20, y + 22)
+        panel:SetSize(width - 40, 36)
+        return panel
+    end
+    local name = entry("Console name", information.name, 40)
+    -- Lua 5.1's tostring can round a stored double. Keep simple values short,
+    -- but preserve the exact delay when another field alone is being edited.
+    local delayText = tostring(information.delay)
+    if tonumber(delayText) ~= information.delay then delayText = string.format("%.17g", information.delay) end
+    local delay = entry("Slice delay (seconds)", delayText, 110)
+    local fileName = entry("Filename (no extension)", information.fileName, 180)
+    label("Folder: " .. information.fileType .. " (fixed)", 250, 24)
+    local status = label("Change the fields above, then save.", 286, 60)
+    local save = vgui.Create("DButton", frame)
+    save:SetText("Save changes")
+    save:SetPos(20, 366)
+    save:SetSize((width - 52) / 2, 44)
+    local cancel = vgui.Create("DButton", frame)
+    cancel:SetText("Cancel")
+    cancel:SetPos(32 + (width - 52) / 2, 366)
+    cancel:SetSize((width - 52) / 2, 44)
+
+    local function setPending(pending)
+        edit.pending = pending
+        save:SetEnabled(not pending)
+        cancel:SetText(pending and "Close" or "Cancel")
+        -- Acknowledgement cannot discard edits typed after the submitted draft.
+        for _, input in ipairs({name, delay, fileName}) do input:SetEditable(not pending) end
+    end
+    local function showStatus(message, failed)
+        status:SetText(message)
+        status:SetTextColor(failed and Color(255, 150, 150, 255) or Color(220, 220, 220, 255))
+    end
+    save.DoClick = function()
+        if not edit.isCurrent() or edit.pending then return end
+        if not IsValid(console) or not IsValid(callingPlayer) or not callingPlayer:IsPlayer()
+            or not callingPlayer:Alive() then
+            showStatus("This edit is no longer current. Close this form and use !editConsole to reopen it.", true)
+            return
+        end
+        local enteredName, enteredFile = name:GetValue(), fileName:GetValue()
+        local enteredDelay = tonumber(delay:GetValue())
+        if #enteredName > 128 or string.Trim(enteredName) == ""
+            or #enteredFile > 128 or string.Trim(enteredFile) == ""
+            or enteredDelay == nil or enteredDelay ~= enteredDelay
+            or enteredDelay <= 0 or enteredDelay == math.huge then
+            showStatus("Invalid fields: names must be nonblank and at most 128 bytes; delay must be a finite number greater than 0.", true)
+            return
+        end
+        setPending(true)
+        showStatus("Saving changes... Closing cannot undo a submitted save.", false)
+        net.Start("SlicerSetupEditSave")
+            net.WriteEntity(console)
+            net.WriteString(token)
+            net.WriteTable({name = enteredName, delay = enteredDelay, fileName = enteredFile})
+        net.SendToServer()
+    end
+    cancel.DoClick = function()
+        if edit.isCurrent() then edit.close() end
+    end
+    function edit.reply(result)
+        if not edit.isCurrent() or type(result) ~= "table" then return end
+        if result.ok == true then
+            if not edit.pending then return end
+            retire(false) -- The acknowledged ticket was consumed, not cancelled.
+            frame:Close()
+        elseif result.ok == false then
+            setPending(false)
+            local message = type(result.message) == "string" and result.message ~= "" and result.message
+                or "Changes were not saved. Close this form and use !editConsole to reopen it."
+            showStatus(message, true)
+        end
+    end
+end)
+
+net.Receive("SlicerSetupEditReply", function()
+    local token = net.ReadString()
+    local result = net.ReadTable()
+    local edit = setupEditTokens[token]
+    if edit then edit.reply(result) end -- No entity is needed after console removal.
+end)
+
 -- END OF ADMIN UI
 
 

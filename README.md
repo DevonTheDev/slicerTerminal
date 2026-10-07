@@ -56,7 +56,48 @@ Reopening a setup that is already on screen brings that same form forward and
 keeps its current fields. Different consoles keep separate forms. Closing one
 does not submit another console's configuration, release an active hack or
 change a pending door selection. Once **Done** configures a console, Use follows
-the normal hacking flow; this does not make saved configurations editable.
+the normal hacking flow. Correct saved values through the separate edit command
+below; the initial setup packet cannot overwrite them.
+
+### Correct a saved console setup
+
+Look at one of your configured, idle consoles and type `!editConsole` in chat.
+The **Edit console settings** form shows its saved name, filename and slice
+delay. Change those values and choose **Save changes**. The folder stays fixed,
+and an existing door assignment remains attached to the same console. The
+hacking tool is not required to edit your own setup.
+
+Names follow the original setup rules: nonblank, at most 128 bytes, trimmed and
+normalized to lowercase. Delay must be a finite positive number of seconds.
+Changing only a name keeps the exact saved numeric delay.
+The server validates and acknowledges the save before the form closes. Invalid
+fields leave the draft available for correction. Reopening the same current
+edit brings its form forward and keeps its draft; different consoles have
+independent forms.
+
+Choose **Cancel** before submitting to discard the draft. While a save is
+pending, the fields are locked and the dismissal button reads **Close**.
+Closing cannot undo a save already accepted by the server. A delayed reply for
+that closed form cannot close a newer edit or another console's form.
+
+Only the creator can request and save an edit. A hack beginning on the console
+retires its existing edit, even if that hack later quits. Removed consoles,
+changed ownership or setup, retired forms and disconnected/dead creators cannot
+reuse an old edit. A stale rejection keeps the draft visible and asks you to
+close and reopen with `!editConsole`. Editing never releases a different live
+hack or changes the creator's pending door selection.
+
+A pasted copy can be edited by its new creator without changing the source.
+Copied tools terminals still need their own fresh door link. Once saved, the
+new values appear in later terminal commands, listings and completion messages,
+and the server enforces the updated delay. Existing folder-specific timing
+remains: tools use one delay; data/server access and completion use two.
+
+Local callback tests cover creation, edit, acknowledgement, cancellation,
+replay, copying and complete hacking workflows. The edit form's initial layout
+fits the tested 640×480 and larger viewports. Native Garry's Mod fonts, focus,
+mouse controls, chat targeting, packet timing and actual multiplayer/door
+behavior still require an in-game smoke test.
 
 ### Setup screen size
 

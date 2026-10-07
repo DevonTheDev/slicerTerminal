@@ -7,6 +7,15 @@ include("autorun/server/sv_config.lua")
 local sessions = {}
 local linkedDoors = {}
 
+-- Configuration flags can be changed by legacy callers independently of a
+-- reservation. Editing must also consult the actual server-owned sessions.
+function slicerConsoleHasActiveSession(console)
+    for _, session in pairs(sessions) do
+        if session.console == console then return true end
+    end
+    return false
+end
+
 for _, name in ipairs({
     "PlayerSpawnedConsole", "ServerSendsEntityInformation", "updateInUse",
     "PlayerDied", "playerQuitConsole", "ServerWaitingForEntity", "PlayerAlert",
@@ -62,6 +71,7 @@ function ENT:OnEntityCopyTableFinish(data)
 end
 
 local function resetCopiedState(console)
+    retireSlicerSetupEdit(console)
     console.SlicerCreator, console.SlicerDoor = nil, nil
     console.SlicerInformation = normalizeSlicerInformation(console.SlicerInformation)
     if IsValid(console) then
@@ -144,6 +154,7 @@ function ENT:AcceptInput(name, activator, caller)
     -- Reserve on the server before another player's Use can be handled. The
     -- client expects inUse=false in its own opening message.
     local clientInformation = table.Copy(information)
+    retireSlicerSetupEdit(self)
     information.inUse = true
     sessions[activator] = {
         console = self,
@@ -161,10 +172,12 @@ end
 net.Receive("updateInUse", function() end)
 
 hook.Add("PlayerDeath", "checkForInConsole", function(victim)
+    retireSlicerSetupEditsForPlayer(victim)
     releaseSession(victim, true)
 end)
 
 hook.Add("PlayerDisconnected", "slicerReleaseConsole", function(ply)
+    retireSlicerSetupEditsForPlayer(ply)
     releaseSession(ply, false)
     ply.SlicerPendingConsole = nil
 end)
@@ -266,6 +279,7 @@ net.Receive("destroyOnServer", function(_, ply)
 end)
 
 function ENT:OnRemove()
+    retireSlicerSetupEdit(self)
     for ply, session in pairs(sessions) do
         if session.console == self then releaseSession(ply, true) end
     end

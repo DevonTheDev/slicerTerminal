@@ -33,6 +33,150 @@ function normalizeSlicerInformation(givenInformation)
     }
 end
 
+-- Edit authority is server-only and never travels through copied entity data.
+-- Reincluding this file retires its tickets, but preserves the serial so an
+-- older form can never acquire a new ticket's identity. Stop rather than wrap.
+slicerSetupEditSerial = slicerSetupEditSerial or 0
+local editTickets = {}
+local maximumEditSerial = 9007199254740991
+local reopenEdit = "Close this form and use !editConsole to reopen it."
+local informationFields = {"name", "delay", "fileType", "fileName", "inUse"}
+
+function retireSlicerSetupEdit(console)
+    if console ~= nil then editTickets[console] = nil end
+end
+
+function retireSlicerSetupEditsForPlayer(ply)
+    for console, ticket in pairs(editTickets) do
+        if ticket.player == ply then editTickets[console] = nil end
+    end
+end
+
+local function editContext(ply, console)
+    if not IsValid(ply) or not ply:IsPlayer() or not ply:Alive() then return end
+    if not IsValid(console) or console:GetClass() ~= "consoleent" or console.SlicerCreator ~= ply then return end
+    local information = console.SlicerInformation
+    local normalized = normalizeSlicerInformation(information)
+    if not normalized or information.inUse
+        or (slicerConsoleHasActiveSession and slicerConsoleHasActiveSession(console)) then return end
+    for _, field in ipairs(informationFields) do
+        if information[field] ~= normalized[field] then return end
+    end
+    local record
+    for _, entry in pairs(spawnedEntities) do
+        if entry.entity == console then
+            if record or entry.entityName ~= console:GetName() or entry.information ~= information then return end
+            record = entry
+        end
+    end
+    if not record then return end
+    return information, normalized, record
+end
+
+local function currentEdit(ticket, ply, console)
+    local information, normalized, record = editContext(ply, console)
+    if not information or ticket.player ~= ply or ticket.console ~= console
+        or ticket.information ~= information or ticket.record ~= record
+        or ticket.entityName ~= console:GetName() then return false end
+    for _, field in ipairs(informationFields) do
+        if ticket.snapshot[field] ~= normalized[field] then return false end
+    end
+    return true
+end
+
+local function nextEditToken()
+    if type(slicerSetupEditSerial) ~= "number" or slicerSetupEditSerial < 0
+        or slicerSetupEditSerial % 1 ~= 0 or slicerSetupEditSerial >= maximumEditSerial then return end
+    slicerSetupEditSerial = slicerSetupEditSerial + 1
+    return string.format("%.0f", slicerSetupEditSerial)
+end
+
+local function validEditToken(token)
+    return type(token) == "string" and #token > 0 and #token <= 16 and token:match("^%d+$") ~= nil
+end
+
+local function editReply(ply, token, ok, message)
+    -- No Entity is written: stale forms still receive errors after removal.
+    net.Start("SlicerSetupEditReply")
+        net.WriteString(token)
+        net.WriteTable({ok = ok, message = message})
+    net.Send(ply)
+end
+
+for _, name in ipairs({"SlicerSetupEditOpen", "SlicerSetupEditSave", "SlicerSetupEditReply", "SlicerSetupEditCancel"}) do
+    util.AddNetworkString(name)
+end
+
+hook.Add("PlayerSay", "slicerEditConsole", function(ply, text)
+    if text ~= "!editConsole" then return end
+    if not IsValid(ply) or not ply:IsPlayer() or not ply:Alive() then return "" end
+    local console = ply:GetEyeTrace().Entity
+    local ticket = console ~= nil and editTickets[console] or nil
+    if ticket and not currentEdit(ticket, ticket.player, console) then
+        retireSlicerSetupEdit(console)
+        ticket = nil
+    end
+    local information, normalized, record = editContext(ply, console)
+    if not information then
+        ply:ChatPrint("Look at one of your configured, idle consoles and type !editConsole to edit it.")
+        return ""
+    end
+    if not ticket then
+        local token = nextEditToken()
+        if not token then
+            ply:ChatPrint("An edit cannot be opened right now.")
+            return ""
+        end
+        ticket = {player = ply, console = console, token = token,
+            information = information, snapshot = normalized, record = record, entityName = console:GetName()}
+        editTickets[console] = ticket
+    end
+    net.Start("SlicerSetupEditOpen")
+        net.WriteEntity(console)
+        net.WriteEntity(ply)
+        net.WriteString(ticket.token)
+        net.WriteTable(table.Copy(ticket.snapshot))
+    net.Send(ply)
+    return ""
+end)
+
+net.Receive("SlicerSetupEditSave", function(_, ply)
+    if not IsValid(ply) or not ply:IsPlayer() then return end
+    local console, token, fields = net.ReadEntity(), net.ReadString(), net.ReadTable()
+    if not validEditToken(token) then return end
+    local ticket = console ~= nil and editTickets[console] or nil
+    if not ticket or ticket.player ~= ply or ticket.console ~= console or ticket.token ~= token then
+        editReply(ply, token, false, "This edit is no longer current. " .. reopenEdit)
+        return
+    end
+    if not currentEdit(ticket, ply, console) then
+        retireSlicerSetupEdit(console)
+        editReply(ply, token, false, "This console is unavailable or its setup has changed. " .. reopenEdit)
+        return
+    end
+    local information = type(fields) == "table" and normalizeSlicerInformation({
+        name = fields.name, delay = fields.delay, fileName = fields.fileName,
+        fileType = ticket.snapshot.fileType,
+    }) or nil
+    if not information then
+        editReply(ply, token, false, "Use nonblank names of at most 128 bytes and a finite positive delay.")
+        return
+    end
+    console.SlicerInformation = information
+    ticket.record.information = information
+    retireSlicerSetupEdit(console)
+    editReply(ply, token, true, "Console setup updated.")
+end)
+
+net.Receive("SlicerSetupEditCancel", function(_, ply)
+    if not IsValid(ply) or not ply:IsPlayer() then return end
+    local console, token = net.ReadEntity(), net.ReadString()
+    local ticket = console ~= nil and editTickets[console] or nil
+    if ticket and ticket.player == ply and ticket.console == console and ticket.token == token then
+        retireSlicerSetupEdit(console)
+    end
+end)
+
 util.AddNetworkString("AdminFinishedCreation")
 net.Receive("AdminFinishedCreation", function(_, ply)
     if not IsValid(ply) or not ply:IsPlayer() then return end
