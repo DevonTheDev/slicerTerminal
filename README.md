@@ -78,6 +78,9 @@ The folder artwork scales with the initial viewport, keeping tools, data and
 server in their existing left-to-right order. Explicit `{_tools}`, `{_data}` and
 `{_server}` captions identify the commands even when the artwork is smaller.
 Three file rows have space between them and stay above the controls.
+File rows are read-only; use the command entry below them. In the target folder,
+the two decoys have distinct basenames and exclude the target case-insensitively.
+Other folders keep their distractors, which can share the objective's basename.
 The scrolling **Commands** window uses the same content area, leaving the
 heading, objective and footer uncovered while help is open.
 

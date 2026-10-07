@@ -694,6 +694,14 @@ local filenames = {
    "important",
 }
 
+local decoyFilenames = {}
+for _, filename in ipairs(filenames) do
+   if string.lower(filename) != string.lower(consoleInfo["fileName"]) then
+       decoyFilenames[#decoyFilenames + 1] = filename
+       if #decoyFilenames == 2 then break end
+   end
+end
+
                    if(string.lower(inputTerminal2:GetValue()) == "/a[" .. consoleInfo["name"] .. "]/" .. acceptedFolders[1]) then
 
                        timer.Stop("secondPageGlitch") -- Removes the glitch effect so errors aren't thrown
@@ -749,22 +757,14 @@ local filenames = {
                            local randomFile1 = vgui.Create("DTextEntry", insideData)
                            layoutFileRow(randomFile1, layout, 1)
                            randomFile1:SetFont("HackingFont")
-                           for k, v in pairs(filenames) do
-                               if v != consoleInfo["fileName"] then
-                                   randomFile1:SetText(v .. ".data")
-                                   table.RemoveByValue(filenames, v)
-                               end
-                           end
+                           randomFile1:SetText(decoyFilenames[1] .. ".data")
+                           randomFile1:SetEditable(false)
 
                            local randomFile2 = vgui.Create("DTextEntry", insideData)
                            layoutFileRow(randomFile2, layout, 3)
                            randomFile2:SetFont("HackingFont")
-                           for k, v in pairs(filenames) do
-                               if v != consoleInfo["fileName"] then
-                                   randomFile2:SetText(v .. ".data")
-                                   table.RemoveByValue(filenames, v)
-                               end
-                           end
+                           randomFile2:SetText(decoyFilenames[2] .. ".data")
+                           randomFile2:SetEditable(false)
                        else
                            local randomFile1 = vgui.Create("DTextEntry", insideData)
                            layoutFileRow(randomFile1, layout, 2)
@@ -919,22 +919,14 @@ local filenames = {
                            local randomFile1 = vgui.Create("DTextEntry", insideServer)
                            layoutFileRow(randomFile1, layout, 1)
                            randomFile1:SetFont("HackingFont")
-                           for k, v in pairs(filenames) do
-                               if v != consoleInfo["fileName"] then
-                                   randomFile1:SetText(v .. ".sys")
-                                   table.RemoveByValue(filenames, v)
-                               end
-                           end
+                           randomFile1:SetText(decoyFilenames[1] .. ".sys")
+                           randomFile1:SetEditable(false)
 
                            local randomFile2 = vgui.Create("DTextEntry", insideServer)
                            layoutFileRow(randomFile2, layout, 3)
                            randomFile2:SetFont("HackingFont")
-                           for k, v in pairs(filenames) do
-                               if v != consoleInfo["fileName"] then
-                                   randomFile2:SetText(v .. ".sys")
-                                   table.RemoveByValue(filenames, v)
-                               end
-                           end
+                           randomFile2:SetText(decoyFilenames[2] .. ".sys")
+                           randomFile2:SetEditable(false)
                        else
                            local randomFile1 = vgui.Create("DTextEntry", insideServer)
                            layoutFileRow(randomFile1, layout, 2)
@@ -1089,22 +1081,14 @@ local filenames = {
                            local randomFile1 = vgui.Create("DTextEntry", insideTools)
                            layoutFileRow(randomFile1, layout, 1)
                            randomFile1:SetFont("HackingFont")
-                           for k, v in pairs(filenames) do
-                               if v != consoleInfo["fileName"] then
-                                   randomFile1:SetText(v .. ".exe")
-                                   table.RemoveByValue(filenames, v)
-                               end
-                           end
+                           randomFile1:SetText(decoyFilenames[1] .. ".exe")
+                           randomFile1:SetEditable(false)
 
                            local randomFile2 = vgui.Create("DTextEntry", insideTools)
                            layoutFileRow(randomFile2, layout, 3)
                            randomFile2:SetFont("HackingFont")
-                           for k, v in pairs(filenames) do
-                               if v != consoleInfo["fileName"] then
-                                   randomFile2:SetText(v .. ".sys")
-                                   table.RemoveByValue(filenames, v)
-                               end
-                           end
+                           randomFile2:SetText(decoyFilenames[2] .. ".sys")
+                           randomFile2:SetEditable(false)
                        else
                            local randomFile1 = vgui.Create("DTextEntry", insideTools)
                            layoutFileRow(randomFile1, layout, 2)
