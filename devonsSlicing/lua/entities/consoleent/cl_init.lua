@@ -52,7 +52,59 @@ local function quitTerminal(session, page)
     net.SendToServer()
 end
 
+-- One initial-open geometry budget shared by every player page. Keep content
+-- between the heading/objective and the persistent command/action footer.
+local function playerLayout(width, height)
+    local layout = {width = width, height = height, margin = 20, gap = 12}
+    layout.headerHeight = math.min(100, math.max(64, math.floor(height * 0.12)))
+    layout.objectiveY, layout.objectiveHeight = layout.headerHeight + 8, 40
+    layout.inputY, layout.inputHeight = height - 68, 48
+    layout.actionsY = layout.inputY - 42
+    layout.contentY = layout.headerHeight + 60
+    layout.contentHeight = layout.actionsY - 20 - layout.contentY
+    layout.folderSize = math.min(512, math.floor((width - 64) / 3), layout.contentHeight - 32)
+    layout.folderX = math.floor((width - layout.folderSize * 3 - layout.gap * 2) / 2)
+    layout.folderY = layout.contentY + math.floor((layout.contentHeight - layout.folderSize - 32) / 2)
+    layout.rowWidth = math.min(420, width - layout.margin * 2)
+    layout.rowHeight = math.min(100, math.floor((layout.contentHeight - layout.gap * 2) / 3))
+    layout.rowX = math.floor((width - layout.rowWidth) / 2)
+    layout.rowY = layout.contentY + math.floor((layout.contentHeight - layout.rowHeight * 3 - layout.gap * 2) / 2)
+    return layout
+end
+
+local function layoutPlayerLabel(label, layout, text, objective)
+    -- Bound long labels to their own band; keep their full value for help and
+    -- command insertion. Native font wrapping/readability still needs a game check.
+    label:SetFont(#text > 40 and "HackingFont" or (objective and "PlayerObjectiveFont" or "PlayerHeadingFont"))
+    label:SetText(text)
+    label:SetWrap(true)
+    label:SetContentAlignment(5)
+    label:SetPos(layout.margin, objective and layout.objectiveY or 0)
+    label:SetSize(layout.width - layout.margin * 2, objective and layout.objectiveHeight or layout.headerHeight)
+end
+
+local function layoutFolder(image, parent, layout, column, identity)
+    local x = layout.folderX + (column - 1) * (layout.folderSize + layout.gap)
+    image:SetSize(layout.folderSize, layout.folderSize)
+    image:SetPos(x, layout.folderY)
+    local caption = vgui.Create("DLabel", parent)
+    caption:SetFont("HackingFont")
+    caption:SetText(identity)
+    caption:SetTextColor(Color(220, 220, 220, 255))
+    caption:SetContentAlignment(5)
+    caption:SetPos(x, layout.folderY + layout.folderSize + 8)
+    caption:SetSize(layout.folderSize, 24)
+end
+
+local function layoutFileRow(row, layout, index)
+    row:SetSize(layout.rowWidth, layout.rowHeight)
+    row:SetPos(layout.rowX, layout.rowY + (index - 1) * (layout.rowHeight + layout.gap))
+end
+
 local function configureCommandAssistance(input, parent, info, stage, history, session)
+    local layout = session.layout
+    input:SetSize(layout.width - layout.margin * 2, layout.inputHeight)
+    input:SetPos(layout.margin, layout.inputY)
     input.IsCurrentTerminalPage = function()
         return activeTerminalSession == session and isLiveCommandPanel(parent) and isLiveCommandPanel(input)
     end
@@ -72,8 +124,11 @@ local function configureCommandAssistance(input, parent, info, stage, history, s
         closeCommandHelp()
         commandHelpOwner = input
         commandHelpFrame = vgui.Create("DFrame", parent)
-        commandHelpFrame:SetSize(math.min(760, ScrW() - 40), math.min(420, ScrH() - 60))
-        commandHelpFrame:Center()
+        local helpWidth = math.min(760, layout.width - layout.margin * 2)
+        local helpHeight = math.min(420, layout.contentHeight)
+        commandHelpFrame:SetSize(helpWidth, helpHeight)
+        commandHelpFrame:SetPos(math.floor((layout.width - helpWidth) / 2),
+            layout.contentY + math.floor((layout.contentHeight - helpHeight) / 2))
         commandHelpFrame:SetTitle("Commands - " .. info.name .. " / " .. stage)
         commandHelpFrame:SetDeleteOnClose(true)
         commandHelpFrame:ShowCloseButton(true)
@@ -125,12 +180,12 @@ local function configureCommandAssistance(input, parent, info, stage, history, s
     end
     local button = vgui.Create("DButton", parent)
     button:SetSize(160, 30)
-    button:SetPos(5, ScrH() - 140)
+    button:SetPos(layout.margin, layout.actionsY)
     button:SetText("Commands (/help)")
     button.DoClick = input.ShowCommandHelp
     local quit = vgui.Create("DButton", parent)
     quit:SetSize(160, 30)
-    quit:SetPos(175, ScrH() - 140)
+    quit:SetPos(layout.margin + 172, layout.actionsY)
     quit:SetText("Quit terminal")
     quit.DoClick = function()
         if isLiveCommandPanel(quit) then quitTerminal(session, parent) end
@@ -216,6 +271,16 @@ surface.CreateFont("FolderFont", {
     font = "Data Control",
     size = 60
 
+})
+
+surface.CreateFont("PlayerHeadingFont", {
+    font = "Data Control",
+    size = 32,
+})
+
+surface.CreateFont("PlayerObjectiveFont", {
+    font = "Data Control",
+    size = 20,
 })
 
 surface.CreateFont("ConsoleFont", {
@@ -410,7 +475,8 @@ net.Receive("ServerSendsEntityInformation", function() -- Frames open
     local lowerBound = 3
 if(!consoleInfo["inUse"]) then
     closeConsoleUI()
-    local terminalSession = {player = callingPlayer, console = usedConsole}
+    local layout = playerLayout(ScrW(), ScrH())
+    local terminalSession = {player = callingPlayer, console = usedConsole, layout = layout}
     activeTerminalSession = terminalSession
 
     surface.PlaySound("code_welcome.wav")
@@ -446,22 +512,16 @@ if(!consoleInfo["inUse"]) then
    end)
 
    local findFileLabel1 = vgui.Create("DLabel", firstPage)
-   findFileLabel1:SetFont("FolderFont")
-   findFileLabel1:SetText("Locate file '" .. consoleInfo["fileName"] .. "'")
-   findFileLabel1:SetSize(findFileLabel1:GetTextSize())
+   layoutPlayerLabel(findFileLabel1, layout, "Locate file '" .. consoleInfo["fileName"] .. "'", true)
    findFileLabel1:SetTextColor(Color(255, 0, 0, 255))
-   findFileLabel1:SetPos(-ScrW() - findFileLabel1:GetTextSize(), 100)
+   findFileLabel1:SetPos(-layout.width, layout.objectiveY)
    
-   findFileLabel1:MoveTo((ScrW()/2) - findFileLabel1:GetTextSize()/2, 105, 1, 0.2, 1)
+   findFileLabel1:MoveTo(layout.margin, layout.objectiveY, 1, 0.2, 1)
 
 
    -- Prints the console identifier to the top
    local consoleNameLabel = vgui.Create("DLabel", firstPage)
-   consoleNameLabel:SetFont("FolderFont")
-   consoleNameLabel:SetText(consoleInfo["name"])
-   consoleNameLabel:SetPos(0, 0)
-   consoleNameLabel:SetSize(ScrW(), 100)
-   consoleNameLabel:SetContentAlignment(5)
+   layoutPlayerLabel(consoleNameLabel, layout, consoleInfo["name"], false)
 
    -- Paints the banner
    function consoleNameLabel.Paint(self, w, h)
@@ -475,7 +535,7 @@ if(!consoleInfo["inUse"]) then
    userBox:SetPlaceholderText("User ID")
    userBox:SetPlaceholderColor(Color(140, 140, 140, 220))
    userBox:SetSize(100, 25)
-   userBox:SetPos((ScrW()/2) - 50, (ScrH()/2) - 12.5)
+   userBox:SetPos((layout.width - 100) / 2, layout.contentY + (layout.contentHeight - 50) / 2)
    userBox:SetEditable(false) -- Stops the player being able to interact with the console
 
    local passBox = vgui.Create("DTextEntry", firstPage)
@@ -483,7 +543,7 @@ if(!consoleInfo["inUse"]) then
    passBox:SetPlaceholderText("Password ID")
    passBox:SetPlaceholderColor(Color(140, 140, 140, 220))
    passBox:SetSize(100, 25)
-   passBox:SetPos((ScrW()/2) - 50, (ScrH()/2) + 12.5)
+   passBox:SetPos((layout.width - 100) / 2, layout.contentY + (layout.contentHeight - 50) / 2 + 25)
    passBox:SetEditable(false) -- Stops the player being able to interact with the console
 
    -- Creates the access terminal
@@ -491,8 +551,6 @@ if(!consoleInfo["inUse"]) then
    inputTerminal1:SetFont("HackingFont")
    inputTerminal1:SetPlaceholderText(COMMAND_PROMPT)
    inputTerminal1:SetPlaceholderColor(Color(140, 140, 140, 220))
-   inputTerminal1:SetSize(ScrW(), 100)
-   inputTerminal1:SetPos(5, ScrH()-100)
    inputTerminal1:SetTextColor(Color(36, 209, 36, 255))
    inputTerminal1:SetPaintBackground(false)
    inputTerminal1:SetCursorColor(Color(36, 209, 36, 255))
@@ -568,20 +626,13 @@ This code sets up the second page of the console
                end)
 
                local findFileLabel2 = vgui.Create("DLabel", secondPage)
-               findFileLabel2:SetFont("FolderFont")
-               findFileLabel2:SetText("Locate file '" .. consoleInfo["fileName"] .. "'")
-               findFileLabel2:SetSize(findFileLabel2:GetTextSize())
+               layoutPlayerLabel(findFileLabel2, layout, "Locate file '" .. consoleInfo["fileName"] .. "'", true)
                findFileLabel2:SetTextColor(Color(255, 0, 0, 255))
-               findFileLabel2:SetPos((ScrW()/2) - findFileLabel2:GetTextSize()/2, 105)
 
 
                -- Prints the console identifier to the top
                local consoleNameLabel = vgui.Create("DLabel", secondPage)
-               consoleNameLabel:SetFont("FolderFont")
-               consoleNameLabel:SetText(consoleInfo["name"])
-               consoleNameLabel:SetPos(0, 0)
-               consoleNameLabel:SetSize(ScrW(), 100)
-               consoleNameLabel:SetContentAlignment(5)
+               layoutPlayerLabel(consoleNameLabel, layout, consoleInfo["name"], false)
 
                -- Paints the banner
                function consoleNameLabel.Paint(self, w, h)
@@ -591,18 +642,15 @@ This code sets up the second page of the console
 
                -- Creates the images to display the different folders
                local dataFolderImage = vgui.Create("DImage", secondPage)
-               dataFolderImage:SetSize(512, 512)
-               dataFolderImage:Center()
+               layoutFolder(dataFolderImage, secondPage, layout, 2, "{_data}")
                dataFolderImage:SetImage("vgui/folder1.png")
 
                local serverFolderImage = vgui.Create("DImage", secondPage)
-               serverFolderImage:SetSize(512, 512)
-               serverFolderImage:SetPos(dataFolderImage:GetX() + 600, dataFolderImage:GetY())
+               layoutFolder(serverFolderImage, secondPage, layout, 3, "{_server}")
                serverFolderImage:SetImage("vgui/folder2.png")
 
                local toolsFolderImage = vgui.Create("DImage", secondPage)
-               toolsFolderImage:SetSize(512, 512)
-               toolsFolderImage:SetPos(dataFolderImage:GetX() - 600, dataFolderImage:GetY())
+               layoutFolder(toolsFolderImage, secondPage, layout, 1, "{_tools}")
                toolsFolderImage:SetImage("vgui/folder3.png")
 
                -- Creates the access terminal
@@ -610,8 +658,6 @@ This code sets up the second page of the console
                inputTerminal2:SetFont("HackingFont")
                inputTerminal2:SetPlaceholderText(COMMAND_PROMPT)
                inputTerminal2:SetPlaceholderColor(Color(140, 140, 140, 220))
-               inputTerminal2:SetSize(ScrW(), 100)
-               inputTerminal2:SetPos(5, ScrH()-100)
                inputTerminal2:SetTextColor(Color(36, 209, 36, 255))
                inputTerminal2:SetPaintBackground(false)
                inputTerminal2:SetCursorColor(Color(36, 209, 36, 255))
@@ -680,20 +726,13 @@ local filenames = {
                        end)
 
                        local findFileLabel3 = vgui.Create("DLabel", insideData)
-                       findFileLabel3:SetFont("FolderFont")
-                       findFileLabel3:SetText("Locate file '" .. consoleInfo["fileName"] .. "'")
-                       findFileLabel3:SetSize(findFileLabel3:GetTextSize())
+                       layoutPlayerLabel(findFileLabel3, layout, "Locate file '" .. consoleInfo["fileName"] .. "'", true)
                        findFileLabel3:SetTextColor(Color(255, 0, 0, 255))
-                       findFileLabel3:SetPos((ScrW()/2) - findFileLabel3:GetTextSize()/2, 105)
                         
 
                        -- Prints the console identifier to the top
                        local dataNameLabel = vgui.Create("DLabel", insideData)
-                       dataNameLabel:SetFont("FolderFont")
-                       dataNameLabel:SetText(consoleInfo["name"] .. "/" .. acceptedFolders[1])
-                       dataNameLabel:SetPos(0, 0)
-                       dataNameLabel:SetSize(ScrW(), 100)
-                       dataNameLabel:SetContentAlignment(5)
+                       layoutPlayerLabel(dataNameLabel, layout, consoleInfo["name"] .. "/" .. acceptedFolders[1], false)
 
                        -- Paints the banner
                        function dataNameLabel.Paint(self, w, h)
@@ -702,15 +741,13 @@ local filenames = {
 
                        if(consoleInfo["fileType"] == "data") then
                            local dataRequiredFile = vgui.Create("DTextEntry", insideData)
-                           dataRequiredFile:SetSize(300, 100)
-                           dataRequiredFile:Center()
+                           layoutFileRow(dataRequiredFile, layout, 2)
                            dataRequiredFile:SetFont("HackingFont")
                            dataRequiredFile:SetText(string.upper(consoleInfo["fileName"]) .. ".data")
                            dataRequiredFile:SetEditable(false)
 
                            local randomFile1 = vgui.Create("DTextEntry", insideData)
-                           randomFile1:SetSize(300, 100)
-                           randomFile1:SetPos(dataRequiredFile:GetX(), dataRequiredFile:GetY() - 100)
+                           layoutFileRow(randomFile1, layout, 1)
                            randomFile1:SetFont("HackingFont")
                            for k, v in pairs(filenames) do
                                if v != consoleInfo["fileName"] then
@@ -720,8 +757,7 @@ local filenames = {
                            end
 
                            local randomFile2 = vgui.Create("DTextEntry", insideData)
-                           randomFile2:SetSize(300, 100)
-                           randomFile2:SetPos(dataRequiredFile:GetX(), dataRequiredFile:GetY() + 100)
+                           layoutFileRow(randomFile2, layout, 3)
                            randomFile2:SetFont("HackingFont")
                            for k, v in pairs(filenames) do
                                if v != consoleInfo["fileName"] then
@@ -731,22 +767,19 @@ local filenames = {
                            end
                        else
                            local randomFile1 = vgui.Create("DTextEntry", insideData)
-                           randomFile1:SetSize(300, 100)
-                           randomFile1:Center()
+                           layoutFileRow(randomFile1, layout, 2)
                            randomFile1:SetFont("HackingFont")
                            randomFile1:SetEditable(false)
                            randomFile1:SetText("consoleLogs.data")
 
                            local randomFile2 = vgui.Create("DTextEntry", insideData)
-                           randomFile2:SetSize(300, 100)
-                           randomFile2:SetPos(randomFile1:GetX(), randomFile1:GetY() - 100)
+                           layoutFileRow(randomFile2, layout, 1)
                            randomFile2:SetFont("HackingFont")
                            randomFile2:SetEditable(false)
                            randomFile2:SetText("recentlyDeleted.data")
 
                            local randomFile3 = vgui.Create("DTextEntry", insideData)
-                           randomFile3:SetSize(300, 100)
-                           randomFile3:SetPos(randomFile1:GetX(), randomFile1:GetY() + 100)
+                           layoutFileRow(randomFile3, layout, 3)
                            randomFile3:SetFont("HackingFont")
                            randomFile3:SetEditable(false)
                            randomFile3:SetText("cleaningLog.data")
@@ -759,8 +792,6 @@ local filenames = {
                        dataInputTerminal:SetFont("HackingFont")
                        dataInputTerminal:SetPlaceholderText(COMMAND_PROMPT)
                        dataInputTerminal:SetPlaceholderColor(Color(140, 140, 140, 220))
-                       dataInputTerminal:SetSize(ScrW(), 100)
-                       dataInputTerminal:SetPos(5, ScrH()-100)
                        dataInputTerminal:SetTextColor(Color(36, 209, 36, 255))
                        dataInputTerminal:SetPaintBackground(false)
                        dataInputTerminal:SetCursorColor(Color(36, 209, 36, 255))
@@ -865,20 +896,13 @@ local filenames = {
                        end)
 
                        local findFileLabel4 = vgui.Create("DLabel", insideServer)
-                       findFileLabel4:SetFont("FolderFont")
-                       findFileLabel4:SetText("Locate file '" .. consoleInfo["fileName"] .. "'")
-                       findFileLabel4:SetSize(findFileLabel4:GetTextSize())
+                       layoutPlayerLabel(findFileLabel4, layout, "Locate file '" .. consoleInfo["fileName"] .. "'", true)
                        findFileLabel4:SetTextColor(Color(255, 0, 0, 255))
-                       findFileLabel4:SetPos((ScrW()/2) - findFileLabel4:GetTextSize()/2, 105)
 
 
                        -- Prints the console identifier to the top
                        local serverNameLabel = vgui.Create("DLabel", insideServer)
-                       serverNameLabel:SetFont("FolderFont")
-                       serverNameLabel:SetText(consoleInfo["name"] .. "/" .. acceptedFolders[2])
-                       serverNameLabel:SetPos(0, 0)
-                       serverNameLabel:SetSize(ScrW(), 100)
-                       serverNameLabel:SetContentAlignment(5)
+                       layoutPlayerLabel(serverNameLabel, layout, consoleInfo["name"] .. "/" .. acceptedFolders[2], false)
 
                        -- Paints the banner
                        function serverNameLabel.Paint(self, w, h)
@@ -887,15 +911,13 @@ local filenames = {
 
                        if(consoleInfo["fileType"] == "server") then
                            local serverRequiredFile = vgui.Create("DTextEntry", insideServer)
-                           serverRequiredFile:SetSize(300, 100)
-                           serverRequiredFile:Center()
+                           layoutFileRow(serverRequiredFile, layout, 2)
                            serverRequiredFile:SetFont("HackingFont")
                            serverRequiredFile:SetText(string.upper(consoleInfo["fileName"]) .. ".sys")
                            serverRequiredFile:SetEditable(false)
 
                            local randomFile1 = vgui.Create("DTextEntry", insideServer)
-                           randomFile1:SetSize(300, 100)
-                           randomFile1:SetPos(serverRequiredFile:GetX(), serverRequiredFile:GetY() - 100)
+                           layoutFileRow(randomFile1, layout, 1)
                            randomFile1:SetFont("HackingFont")
                            for k, v in pairs(filenames) do
                                if v != consoleInfo["fileName"] then
@@ -905,8 +927,7 @@ local filenames = {
                            end
 
                            local randomFile2 = vgui.Create("DTextEntry", insideServer)
-                           randomFile2:SetSize(300, 100)
-                           randomFile2:SetPos(serverRequiredFile:GetX(), serverRequiredFile:GetY() + 100)
+                           layoutFileRow(randomFile2, layout, 3)
                            randomFile2:SetFont("HackingFont")
                            for k, v in pairs(filenames) do
                                if v != consoleInfo["fileName"] then
@@ -916,22 +937,19 @@ local filenames = {
                            end
                        else
                            local randomFile1 = vgui.Create("DTextEntry", insideServer)
-                           randomFile1:SetSize(300, 100)
-                           randomFile1:Center()
+                           layoutFileRow(randomFile1, layout, 2)
                            randomFile1:SetFont("HackingFont")
                            randomFile1:SetEditable(false)
                            randomFile1:SetText("updateCheck.sys")
 
                            local randomFile2 = vgui.Create("DTextEntry", insideServer)
-                           randomFile2:SetSize(300, 100)
-                           randomFile2:SetPos(randomFile1:GetX(), randomFile1:GetY() - 100)
+                           layoutFileRow(randomFile2, layout, 1)
                            randomFile2:SetFont("HackingFont")
                            randomFile2:SetEditable(false)
                            randomFile2:SetText("connections.sys")
 
                            local randomFile3 = vgui.Create("DTextEntry", insideServer)
-                           randomFile3:SetSize(300, 100)
-                           randomFile3:SetPos(randomFile1:GetX(), randomFile1:GetY() + 100)
+                           layoutFileRow(randomFile3, layout, 3)
                            randomFile3:SetFont("HackingFont")
                            randomFile3:SetEditable(false)
                            randomFile3:SetText("idCheck.sys")
@@ -944,8 +962,6 @@ local filenames = {
                        serverInputTerminal:SetFont("HackingFont")
                        serverInputTerminal:SetPlaceholderText(COMMAND_PROMPT)
                        serverInputTerminal:SetPlaceholderColor(Color(140, 140, 140, 220))
-                       serverInputTerminal:SetSize(ScrW(), 100)
-                       serverInputTerminal:SetPos(5, ScrH()-100)
                        serverInputTerminal:SetTextColor(Color(36, 209, 36, 255))
                        serverInputTerminal:SetPaintBackground(false)
                        serverInputTerminal:SetCursorColor(Color(36, 209, 36, 255))
@@ -1050,20 +1066,13 @@ local filenames = {
                        end)
 
                        local findFileLabel5 = vgui.Create("DLabel", insideTools)
-                       findFileLabel5:SetFont("FolderFont")
-                       findFileLabel5:SetText("Locate file '" .. consoleInfo["fileName"] .. "'")
-                       findFileLabel5:SetSize(findFileLabel5:GetTextSize())
+                       layoutPlayerLabel(findFileLabel5, layout, "Locate file '" .. consoleInfo["fileName"] .. "'", true)
                        findFileLabel5:SetTextColor(Color(255, 0, 0, 255))
-                       findFileLabel5:SetPos((ScrW()/2) - findFileLabel5:GetTextSize()/2, 105)
 
 
                        -- Prints the console identifier to the top
                        local toolsNameLabel = vgui.Create("DLabel", insideTools)
-                       toolsNameLabel:SetFont("FolderFont")
-                       toolsNameLabel:SetText(consoleInfo["name"] .. "/" .. acceptedFolders[3])
-                       toolsNameLabel:SetPos(0, 0)
-                       toolsNameLabel:SetSize(ScrW(), 100)
-                       toolsNameLabel:SetContentAlignment(5)
+                       layoutPlayerLabel(toolsNameLabel, layout, consoleInfo["name"] .. "/" .. acceptedFolders[3], false)
 
                        -- Paints the banner
                        function toolsNameLabel.Paint(self, w, h)
@@ -1072,15 +1081,13 @@ local filenames = {
 
                        if(consoleInfo["fileType"] == "tools") then
                            local toolsRequiredFile = vgui.Create("DTextEntry", insideTools)
-                           toolsRequiredFile:SetSize(300, 100)
-                           toolsRequiredFile:Center()
+                           layoutFileRow(toolsRequiredFile, layout, 2)
                            toolsRequiredFile:SetFont("HackingFont")
                            toolsRequiredFile:SetText(string.upper(consoleInfo["fileName"]) .. ".exe")
                            toolsRequiredFile:SetEditable(false)
 
                            local randomFile1 = vgui.Create("DTextEntry", insideTools)
-                           randomFile1:SetSize(300, 100)
-                           randomFile1:SetPos(toolsRequiredFile:GetX(), toolsRequiredFile:GetY() - 100)
+                           layoutFileRow(randomFile1, layout, 1)
                            randomFile1:SetFont("HackingFont")
                            for k, v in pairs(filenames) do
                                if v != consoleInfo["fileName"] then
@@ -1090,8 +1097,7 @@ local filenames = {
                            end
 
                            local randomFile2 = vgui.Create("DTextEntry", insideTools)
-                           randomFile2:SetSize(300, 100)
-                           randomFile2:SetPos(toolsRequiredFile:GetX(), toolsRequiredFile:GetY() + 100)
+                           layoutFileRow(randomFile2, layout, 3)
                            randomFile2:SetFont("HackingFont")
                            for k, v in pairs(filenames) do
                                if v != consoleInfo["fileName"] then
@@ -1101,22 +1107,19 @@ local filenames = {
                            end
                        else
                            local randomFile1 = vgui.Create("DTextEntry", insideTools)
-                           randomFile1:SetSize(300, 100)
-                           randomFile1:Center()
+                           layoutFileRow(randomFile1, layout, 2)
                            randomFile1:SetFont("HackingFont")
                            randomFile1:SetEditable(false)
                            randomFile1:SetText("mainControl.exe")
 
                            local randomFile2 = vgui.Create("DTextEntry", insideTools)
-                           randomFile2:SetSize(300, 100)
-                           randomFile2:SetPos(randomFile1:GetX(), randomFile1:GetY() - 100)
+                           layoutFileRow(randomFile2, layout, 1)
                            randomFile2:SetFont("HackingFont")
                            randomFile2:SetEditable(false)
                            randomFile2:SetText("washingMachine.exe")
 
                            local randomFile3 = vgui.Create("DTextEntry", insideTools)
-                           randomFile3:SetSize(300, 100)
-                           randomFile3:SetPos(randomFile1:GetX(), randomFile1:GetY() + 100)
+                           layoutFileRow(randomFile3, layout, 3)
                            randomFile3:SetFont("HackingFont")
                            randomFile3:SetEditable(false)
                            randomFile3:SetText("breathing.exe")
@@ -1129,8 +1132,6 @@ local filenames = {
                        toolsInputTerminal:SetFont("HackingFont")
                        toolsInputTerminal:SetPlaceholderText(COMMAND_PROMPT)
                        toolsInputTerminal:SetPlaceholderColor(Color(140, 140, 140, 220))
-                       toolsInputTerminal:SetSize(ScrW(), 100)
-                       toolsInputTerminal:SetPos(5, ScrH()-100)
                        toolsInputTerminal:SetTextColor(Color(36, 209, 36, 255))
                        toolsInputTerminal:SetPaintBackground(false)
                        toolsInputTerminal:SetCursorColor(Color(36, 209, 36, 255))

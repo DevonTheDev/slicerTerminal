@@ -70,6 +70,30 @@ These dimensions describe initial-open geometry. An already open form does not
 relayout when the display size changes. Native rendering, mouse hit-testing,
 dropdown placement and font fit still need the Garry's Mod smoke checks below.
 
+### Player browser screen size
+
+The login, folder and file pages reserve separate areas for the console heading,
+file objective, browser content, **Commands**, **Quit terminal** and command input.
+The folder artwork scales with the initial viewport, keeping tools, data and
+server in their existing left-to-right order. Explicit `{_tools}`, `{_data}` and
+`{_server}` captions identify the commands even when the artwork is smaller.
+Three file rows have space between them and stay above the controls.
+The scrolling **Commands** window uses the same content area, leaving the
+heading, objective and footer uncovered while help is open.
+
+Local geometry checks cover 640×480, 800×600, 1024×600, 1280×720, 1366×768 and
+1920×1080. At 640×480 the three folder images are 192 pixels square; at 1920×1080
+they retain their original 512-pixel size. Full console/file strings remain in
+labels, file entries and inserted commands; long headings/objectives use a
+smaller font and wrapping within their allotted areas.
+
+Each terminal session keeps its initial layout. Quit and reopen the terminal
+after changing display size. These checks execute actual client/server callbacks
+with GMod substitutes and verify rectangle containment, separation, navigation,
+help, return, quit and accepted completion. They do not establish native font
+fit, animation rendering, pointer hit-testing or live resizing. Check those in
+Garry's Mod, especially long names at the smallest resolution.
+
 ### Copy a configured console
 
 Use the ordinary Garry's Mod Duplicator to copy and paste a configured terminal.
@@ -315,6 +339,12 @@ emulated. Before a live rollout, use a test server to check:
 - Try another creator's terminal, a linked terminal (including one whose door
   was removed), a non-tools terminal and an already-claimed door; confirm no
   selection or door changes, then retry with an eligible terminal and door
+- At 640×480 and a normal desktop resolution, log in and inspect all three
+  folders. Confirm their artwork/captions and all file rows are visible above
+  Commands/Quit/input; return, reopen help and complete each terminal type
+- Repeat with maximum-length console/file names, checking actual wrapped text,
+  caret/selection behavior and command insertion. Quit and reopen after changing
+  resolution; a current session does not relayout
 - Check fonts, sounds and layouts at the clients' screen resolutions
 
 Use a fresh server session when deploying server-logic changes; live Lua

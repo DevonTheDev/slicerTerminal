@@ -555,6 +555,7 @@ dofile("tests/terminal-reselection.lua")(gmod, test, equal)
 dofile("tests/deferred-setup.lua")(gmod, test, equal)
 dofile("tests/duplication.lua")(gmod, test, equal)
 dofile("tests/setup-layout.lua")(gmod, test, equal)
+dofile("tests/player-layout.lua")(gmod, test, equal)
 dofile("tests/rotating-doors.lua")(gmod, test, equal)
 
 print(string.format("\n%d passed, %d failed", passed, failed))
