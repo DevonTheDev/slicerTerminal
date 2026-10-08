@@ -20,8 +20,17 @@ return function(gmod, test, equal)
         choice.selected = folder or "tools"
         done:DoClick()
         local packet = assert(client.lastMessage("AdminFinishedCreation"))
+        equal(frame.valid, true, "Setup stays open while its request is pending")
+        equal(done.enabled, false)
+        local before = #server.messages
         server.receive(packet.name, owner, unpackValues(packet.values))
-        equal(frame.valid, false, "Setup closed")
+        equal(#server.messages, before + 1)
+        local reply = assert(server.lastMessage("SlicerInitialSetupReply"))
+        equal(reply.player, owner); equal(reply.values[1], packet.values[1][6])
+        equal(reply.values[2].ok, true)
+        equal(frame.valid, true, "Server commit alone cannot close the client")
+        client.receive(reply.name, nil, unpackValues(reply.values))
+        equal(frame.valid, false, "Matching acceptance closes setup")
         equal(console.SlicerInformation.name, string.lower(name), "Server accepted setup")
         return console.SlicerInformation
     end

@@ -177,27 +177,62 @@ net.Receive("SlicerSetupEditCancel", function(_, ply)
     end
 end)
 
+-- Initial setup keeps the legacy five fields. A sixth field only correlates a
+-- reply; it never grants authority or permits an existing setup to be replaced.
+local function validInitialSetupToken(token)
+    return type(token) == "string" and #token <= 16 and token:match("^[1-9]%d*$") ~= nil
+        and (#token < 16 or token <= "9007199254740991")
+end
+
+local function initialSetupReply(ply, token, result)
+    if token == nil then return end -- Legacy clients did not request a reply.
+    net.Start("SlicerInitialSetupReply")
+        net.WriteString(token)
+        net.WriteTable(result)
+    net.Send(ply)
+end
+
 util.AddNetworkString("AdminFinishedCreation")
+util.AddNetworkString("SlicerInitialSetupReply")
 net.Receive("AdminFinishedCreation", function(_, ply)
     if not IsValid(ply) or not ply:IsPlayer() then return end
 
     local givenInformation = net.ReadTable()
     if type(givenInformation) ~= "table" then return end
 
-    -- [name, delay, fileType, fileName, entityName] comes from the client.
-    local name, delay, fileType, fileName, entityName = givenInformation[1], givenInformation[2], givenInformation[3], givenInformation[4], givenInformation[5]
-    if type(entityName) ~= "string" then return end
-    local information = normalizeSlicerInformation({name = name, delay = delay, fileType = fileType, fileName = fileName})
-    if not information then return end
+    local token = givenInformation[6]
+    if token ~= nil and not validInitialSetupToken(token) then return end
 
+    -- [name, delay, fileType, fileName, entityName, optional token] comes from the client.
+    local name, delay, fileType, fileName, entityName = givenInformation[1], givenInformation[2], givenInformation[3], givenInformation[4], givenInformation[5]
+    local information = normalizeSlicerInformation({name = name, delay = delay, fileType = fileType, fileName = fileName})
+    if type(entityName) ~= "string" or not information then
+        initialSetupReply(ply, token, {ok = false,
+            message = "Invalid setup: choose a folder, nonblank names of at most 128 bytes, and a finite positive delay."})
+        return
+    end
+
+    local target
     for _, console in ipairs(ents.FindByClass("consoleent")) do
         if console:GetName() == entityName and console.SlicerCreator == ply and not console.SlicerInformation then
-            console.SlicerInformation = information
-            table.insert(spawnedEntities, {entityName = entityName, entity = console, information = information})
-            if fileType == "tools" then ply.SlicerPendingConsole = console end
-            return
+            if target then
+                initialSetupReply(ply, token, {ok = false,
+                    message = "This console's identity is ambiguous. Close this form and use a uniquely named console."})
+                return
+            end
+            target = console
         end
     end
+    if not target then
+        initialSetupReply(ply, token, {ok = false,
+            message = "This console is unavailable or already configured. Close this form and use the console again if setup is still available."})
+        return
+    end
+
+    target.SlicerInformation = information
+    table.insert(spawnedEntities, {entityName = entityName, entity = target, information = information})
+    if fileType == "tools" then ply.SlicerPendingConsole = target end
+    initialSetupReply(ply, token, {ok = true, name = information.name, fileType = information.fileType})
 end)
 
 function returnSpawnedEntities()

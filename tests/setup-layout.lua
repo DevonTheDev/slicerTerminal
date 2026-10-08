@@ -44,16 +44,18 @@ return function(gmod, test, equal)
             if panel.class == "DFrame" then form.frame = panel
             elseif panel.class == "DTextEntry" then entries[#entries + 1] = panel
             elseif panel.class == "DComboBox" then form.folder = panel
+            elseif panel.class == "DLabel" then form.status = panel
             elseif panel.class == "DButton" and panel.text == "Done" then form.done = panel
             elseif panel.class == "DButton" and panel.text == "Set up later" then form.later = panel end
         end
-        assert(form.frame and form.folder and form.done and form.later, "Missing setup controls")
+        assert(form.frame and form.folder and form.done and form.later and form.status, "Missing setup controls or status")
         equal(#entries, 3, "Keep the three existing text entries")
-        equal(#client.panels - first + 1, 7, "Keep one frame and six control instances")
+        equal(#client.panels - first + 1, 8, "Keep one frame, six original controls and one status label")
         form.name, form.delay, form.file = entries[1], entries[2], entries[3]
         form.controls = {
             {"console name", form.name}, {"delay", form.delay}, {"folder", form.folder},
             {"filename", form.file}, {"Set up later", form.later}, {"Done", form.done},
+            {"setup status", form.status},
         }
         function form:fill(name, delay, folder, file)
             self.name:SetText(name or "Terminal")
@@ -100,11 +102,11 @@ return function(gmod, test, equal)
         end
     end
     local function assertColumn(form, width, height)
-        local first, last = form.controls[1][2], form.controls[6][2]
+        local first, last = form.controls[1][2], form.controls[7][2]
         local seen = {}
         for i, item in ipairs(form.controls) do
             local panel = item[2]
-            assert(not seen[panel], "Six distinct controls must retain their own callbacks")
+            assert(not seen[panel], "Original controls and status must retain distinct instances")
             seen[panel] = true
             if i > 1 then
                 local previous = form.controls[i - 1][2]
@@ -113,17 +115,23 @@ return function(gmod, test, equal)
         end
         for _, item in ipairs(form.controls) do
             local panel = item[2]
-            equal(panel.height, 48, item[1] .. " compact row height")
+            equal(panel.height, panel == form.status and 72 or 48, item[1] .. " readable row height")
             equal(panel.x * 2 + panel.width, width, item[1] .. " horizontally centered")
             equal(panel.x, first.x); equal(panel.width, first.width)
         end
         equal(first.y + last.y + last.height, height, "Vertically center the whole column")
-        equal(last.y + last.height - first.y, 348, "Six rows and five gaps")
+        equal(last.y + last.height - first.y, 432, "Six 48px controls, one 72px status and six 12px gaps")
+        equal(form.status.wrap, true, "Status wraps within its bounded column")
+        assert(form.status.text ~= "", "Initial setup status is visible")
     end
     local function relaySetup(server, client, sender)
         local packet = assert(client.lastMessage("AdminFinishedCreation"), "No configuration packet")
+        local before = #server.messages
         server.receive(packet.name, sender, unpackValues(packet.values))
-        return packet
+        equal(#server.messages, before + 1, "A correlated submission receives exactly one reply")
+        local reply = assert(server.lastMessage("SlicerInitialSetupReply"))
+        equal(reply.player, sender); equal(reply.values[1], packet.values[1][6])
+        return packet, reply
     end
     local function pasteUnconfigured(server, original, actor)
         -- The actual copy/early-paste/post-paste hooks, under the same generic
@@ -212,17 +220,29 @@ return function(gmod, test, equal)
                 fresh.done:DoClick()
                 local submitted = assert(client.lastMessage("AdminFinishedCreation"))
                 equal(#client.messages, 1, "One existing configuration packet")
-                equal(#submitted.values, 1); equal(#submitted.values[1], 5)
+                equal(#submitted.values, 1); equal(#submitted.values[1], 6)
                 local fields = submitted.values[1]
                 equal(fields[1], " Current name "); equal(fields[2], 2.5)
                 equal(fields[3], "server"); equal(fields[4], " Final file ")
                 equal(fields[5], console:GetName())
-                relaySetup(server, client, outsider)
+                assert(type(fields[6]) == "string" and fields[6]:match("^[1-9]%d*$"), "Append a canonical correlation token")
+                equal(fresh.frame.valid, true); equal(fresh.done.enabled, false)
+                equal(fresh.later.text, "Close")
+                assert(fresh.status.text:find("Closing cannot undo", 1, true), "Pending status explains Close")
+                assertVisible(fresh, width, height); assertUsable(fresh, width, height)
+                assertColumn(fresh, width, height)
+                local _, rejected = relaySetup(server, client, outsider)
                 equal(console.SlicerInformation, nil, "The actual server rejects outsider submission")
-                relaySetup(server, client, owner)
+                equal(rejected.values[2].ok, false, "Only the outsider receives the rejection")
+                local _, accepted = relaySetup(server, client, owner)
                 local info = assert(console.SlicerInformation)
                 equal(info.name, "current name"); equal(info.delay, 2.5)
                 equal(info.fileType, "server"); equal(info.fileName, "final file")
+                equal(accepted.values[2].ok, true)
+                equal(accepted.values[2].name, info.name); equal(accepted.values[2].fileType, info.fileType)
+                equal(fresh.frame.valid, true, "Keep setup visible until the matching acceptance arrives")
+                deliver(client, accepted)
+                equal(fresh.frame.valid, false, "Matching accepted setup closes")
                 server.receive("AdminFinishedCreation", owner, {"Changed", 9, "data", "Changed", console:GetName()})
                 equal(console.SlicerInformation, info); equal(info.name, "current name", "First write stays immutable")
                 if path == "unconfigured copy" then
@@ -236,7 +256,7 @@ return function(gmod, test, equal)
         end
     end
 
-    for _, retirement in ipairs({"defer", "submit", "close", "remove", "hide"}) do
+    for _, retirement in ipairs({"defer", "pending close", "close", "remove", "hide"}) do
         test("compact setup stale buttons preserve another and replacement form after " .. retirement, function()
             local server, client, owner, alpha, old, packet = fixture(640, 480)
             old:fill("Old", "2", "data", "Old file")
@@ -245,7 +265,11 @@ return function(gmod, test, equal)
             other:fill("Beta", "3", "server", "Beta file")
             client.deferPanelRemoval = true
             if retirement == "defer" then old.later:DoClick()
-            elseif retirement == "submit" then old.done:DoClick()
+            elseif retirement == "pending close" then
+                old.done:DoClick()
+                equal(old.frame:IsMarkedForDeletion(), false, "Pending submission retains the form")
+                equal(old.done.enabled, false); equal(old.later.text, "Close")
+                old.frame:Close()
             elseif retirement == "close" then old.frame:Close()
             elseif retirement == "remove" then old.frame:Remove()
             else old.frame:Hide() end
@@ -264,7 +288,9 @@ return function(gmod, test, equal)
             equal(other.frame:IsMarkedForDeletion(), false); equal(other.file:GetValue(), "Beta file")
             other.done:DoClick()
             equal(#client.messages, count + 1)
-            relaySetup(server, client, owner)
+            local _, accepted = relaySetup(server, client, owner)
+            equal(accepted.values[2].ok, true)
+            deliver(client, accepted)
             equal(beta.SlicerInformation.name, "beta"); equal(alpha.SlicerInformation, nil)
         end)
     end

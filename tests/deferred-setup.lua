@@ -12,6 +12,7 @@ return function(gmod, test, equal)
             if panel.class == "DFrame" then form.frame = panel
             elseif panel.class == "DTextEntry" then entries[#entries + 1] = panel
             elseif panel.class == "DComboBox" then form.folder = panel
+            elseif panel.class == "DLabel" then form.status = panel
             elseif panel.class == "DButton" and panel.text == "Done" then form.done = panel
             elseif panel.class == "DButton" and panel.text == "Set up later" then form.later = panel end
         end
@@ -57,10 +58,16 @@ return function(gmod, test, equal)
         equal(packet.values[1], owner); equal(packet.values[2], console:GetName())
         return openPacket(client, packet)
     end
-    local function relaySetup(server, client, owner)
+    local function relaySetup(server, client, owner, accepted)
         local packet = assert(client.lastMessage("AdminFinishedCreation"), "No setup submission")
+        local before = #server.messages
         server.receive(packet.name, owner, unpackValues(packet.values))
-        return packet
+        equal(#server.messages, before + 1, "Correlated submission gets one authenticated reply")
+        local reply = assert(server.lastMessage("SlicerInitialSetupReply"))
+        equal(reply.player, owner); equal(reply.values[1], packet.values[1][6])
+        equal(reply.values[2].ok, accepted ~= false)
+        deliver(client, reply)
+        return packet, reply
     end
 
     test("Set up later discards only its unsaved form without a server packet", function()
@@ -121,14 +128,19 @@ return function(gmod, test, equal)
 
     -- Calls saved before native deletion may arrive after a new form exists.
     -- All variants keep panels valid until the simulated end-of-frame removal.
-    for _, retirement in ipairs({"defer", "submit", "close", "remove", "hide"}) do
+    for _, retirement in ipairs({"defer", "pending close", "close", "remove", "hide"}) do
         test("retired setup callbacks cannot affect a replacement after " .. retirement, function()
             local server, client, owner, console, old, packet = fixture()
             old:fill("data", "Old")
             local done, later = old.done.DoClick, old.later and old.later.DoClick
             client.deferPanelRemoval = true
             if retirement == "defer" then old:defer()
-            elseif retirement == "submit" then old.done:DoClick()
+            elseif retirement == "pending close" then
+                old.done:DoClick()
+                equal(old.frame:IsMarkedForDeletion(), false, "Submission keeps the draft visible")
+                equal(old.done.enabled, false, "Pending submission is locked")
+                equal(old.later.text, "Close")
+                old.frame:Close()
             elseif retirement == "close" then old.frame:Close()
             elseif retirement == "remove" then old.frame:Remove()
             else old.frame:Hide() end
@@ -287,6 +299,8 @@ return function(gmod, test, equal)
             local fresh = reopen(server, client, owner, console)
             fresh:assertBlank(); fresh:fill(kind.folder)
             fresh.done:DoClick()
+            equal(fresh.frame.valid, true, "Await the server's matching acceptance")
+            equal(fresh.done.enabled, false)
             local setupPacket = relaySetup(server, client, owner)
             local info = assert(console.SlicerInformation)
             equal(info.name, "terminal"); equal(info.inUse, false)
@@ -331,9 +345,17 @@ return function(gmod, test, equal)
     test("a removed deferred terminal cannot later be configured by a saved packet", function()
         local server, client, owner, console, form = fixture()
         form:fill(); form.done:DoClick()
+        equal(form.frame.valid, true)
         console:Remove()
-        relaySetup(server, client, owner)
+        local _, rejected = relaySetup(server, client, owner, false)
         equal(console.SlicerInformation, nil)
         equal(#server.returnSpawnedEntities(), 0)
+        equal(form.frame.valid, true, "Rejected setup retains the draft")
+        equal(form.name:GetValue(), "Terminal")
+        equal(form.done.enabled, true); equal(form.folder.enabled, true)
+        equal(form.name.editable, true); equal(form.delay.editable, true); equal(form.file.editable, true)
+        equal(form.status.text, rejected.values[2].message, "Show the actual rejection reason")
+        equal(form.later.text, "Set up later")
+        equal(#owner.chats, 0, "Rejected setup gives no success guidance")
     end)
 end

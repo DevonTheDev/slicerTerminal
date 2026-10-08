@@ -3,7 +3,10 @@ include("entities/consoleent/shared.lua")
 local COMMAND_PROMPT = "Run commands here... (/help | Up/Down history)"
 local commandHelpFrame, commandHelpOwner
 local activeTerminalSession
-local setupForms = {} -- Current unsaved form for each console, never saved drafts.
+-- Reincludes retain live initial drafts and requests; retired forms leave no cache.
+slicerInitialSetupState = slicerInitialSetupState or {forms = {}, requests = {}}
+slicerInitialSetupSerial = slicerInitialSetupSerial or 0
+local setupForms, setupRequests = slicerInitialSetupState.forms, slicerInitialSetupState.requests
 local closeConsoleUI
 
 local function closeCommandHelp()
@@ -360,34 +363,57 @@ surface.CreateFont("ConsoleFont", {
 --]]/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 -- START OF ADMIN UI
-net.Receive("PlayerSpawnedConsole", function()
+local function nextInitialSetupToken()
+    if type(slicerInitialSetupSerial) ~= "number" or slicerInitialSetupSerial < 0
+        or slicerInitialSetupSerial % 1 ~= 0 or slicerInitialSetupSerial >= 9007199254740991 then return end
+    slicerInitialSetupSerial = slicerInitialSetupSerial + 1
+    return string.format("%.0f", slicerInitialSetupSerial)
+end
 
-    local callingPlayer = net.ReadEntity() -- Accesses the player who spawned the console
-    local sentConsoleName = net.ReadString() -- Accesses the spawned console
-    if not IsValid(callingPlayer) or not callingPlayer:IsPlayer() or not callingPlayer:Alive() then return end
+net.Receive("PlayerSpawnedConsole", function()
+    local callingPlayer = net.ReadEntity()
+    local sentConsoleName = net.ReadString()
+    if not IsValid(callingPlayer) or not callingPlayer:IsPlayer() or not callingPlayer:Alive()
+        or type(sentConsoleName) ~= "string" then return end
 
     local previous = setupForms[sentConsoleName]
-    if isLiveCommandPanel(previous) then
-        previous:MakePopup()
-        previous:MoveToFront()
-        return -- Repeated Use keeps the current draft and its callbacks.
+    if previous and previous.isCurrent() then
+        previous.frame:MakePopup()
+        previous.frame:MoveToFront()
+        return -- Repeated Use retains both focused drafts and pending submissions.
     end
-    setupForms[sentConsoleName] = nil
-    if IsValid(previous) and not previous:IsMarkedForDeletion() then previous:Remove() end
+    if previous then previous.close() end
 
-    -- Sets up the background frame
     local initialParent = vgui.Create("DFrame")
-    setupForms[sentConsoleName] = initialParent
-    local function isCurrentSetup()
-        return setupForms[sentConsoleName] == initialParent and isLiveCommandPanel(initialParent)
+    local setup = {frame = initialParent, retired = false}
+    setupForms[sentConsoleName] = setup
+    function setup.isCurrent()
+        return not setup.retired and setupForms[sentConsoleName] == setup and isLiveCommandPanel(initialParent)
     end
     local function retireSetup()
-        if setupForms[sentConsoleName] == initialParent then setupForms[sentConsoleName] = nil end
+        if setup.retired then return end
+        setup.retired = true -- Retire ownership before native cleanup can reenter.
+        if setupForms[sentConsoleName] == setup then setupForms[sentConsoleName] = nil end
+        local submission = setup.pending
+        if submission and setupRequests[submission.token] == submission then setupRequests[submission.token] = nil end
+        setup.pending = nil
     end
-    -- Close may hide a frame or defer removal. Either native cleanup callback
-    -- must retire only its own form, never a later form for the same console.
-    initialParent.OnClose = retireSetup
-    initialParent.OnRemove = retireSetup
+    -- Close and Remove can defer OnRemove. Retire synchronously at both native
+    -- entry points so retained callbacks cannot acknowledge or submit meanwhile.
+    local nativeClose, nativeRemove = initialParent.Close, initialParent.Remove
+    function initialParent:Close()
+        retireSetup()
+        return nativeClose(self)
+    end
+    function initialParent:Remove()
+        retireSetup()
+        return nativeRemove(self)
+    end
+    initialParent.OnClose, initialParent.OnRemove = retireSetup, retireSetup
+    function setup.close()
+        retireSetup()
+        if IsValid(initialParent) and not initialParent:IsMarkedForDeletion() then initialParent:Close() end
+    end
     initialParent:SetSize(ScrW(), ScrH())
     initialParent:Center()
     initialParent:ShowCloseButton(false)
@@ -399,98 +425,126 @@ net.Receive("PlayerSpawnedConsole", function()
         draw.RoundedBox(0, 0, 0, w, h, Color(0, 0, 0, 0))
     end
 
-    -- Allows the spawner to give the file path
     local fileType = vgui.Create("DComboBox", initialParent)
     fileType:AddChoice("data", nil, false, nil)
     fileType:AddChoice("server", nil, false, nil)
     fileType:AddChoice("tools", nil, false, nil)
 
-    -- Allows the spawner to give the console a name
     local consoleNameFrame = vgui.Create("DTextEntry", initialParent)
     consoleNameFrame:AllowInput(true)
     consoleNameFrame:SetPlaceholderText("Enter Console Name Here")
     consoleNameFrame:SetPlaceholderColor(Color(150, 150, 150, 200))
     consoleNameFrame:SetTextColor(Color(0, 0, 0, 255))
 
-    -- Allows the spawner to give the time for the slice
     local slicerTime = vgui.Create("DTextEntry", initialParent)
     slicerTime:AllowInput(true)
     slicerTime:SetPlaceholderText("Enter Slice Time here (Seconds)")
     slicerTime:SetPlaceholderColor(Color(150, 150, 150, 200))
     slicerTime:SetTextColor(Color(0, 0, 0, 255))
 
-    -- Allows the spawner to name the file
     local fileName = vgui.Create("DTextEntry", initialParent)
     fileName:AllowInput(true)
     fileName:SetPlaceholderText("Enter File Name here (No extension)")
     fileName:SetPlaceholderColor(Color(150, 150, 150, 200))
     fileName:SetTextColor(Color(0, 0, 0, 255))
 
---[[/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    PURPOSE
-
-    This code adds a finished button to the panel, which when clicked checks to see if all the fields are valid.
-    If the fields are valid, the code will send all the information to the server so all clients have access to it and close the frame.
-    If the fields are invalid, the admin will be alerted.
---]]/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-    -- Adds a finish button that assigns the values to the variables and runs a check on the file type
     local finishButton = vgui.Create("DButton", initialParent)
     finishButton:SetText("Done")
+    local laterButton = vgui.Create("DButton", initialParent)
+    laterButton:SetText("Set up later")
+    local status = vgui.Create("DLabel", initialParent)
+    status:SetFont("HackingFont")
+    status:SetWrap(true)
+    local function showStatus(message, failed)
+        status:SetText(message)
+        status:SetTextColor(failed and Color(255, 150, 150, 255) or Color(220, 220, 220, 255))
+    end
+    local function lockInputs(pending)
+        finishButton:SetEnabled(not pending)
+        fileType:SetEnabled(not pending)
+        laterButton:SetText(pending and "Close" or "Set up later")
+        for _, input in ipairs({consoleNameFrame, slicerTime, fileName}) do input:SetEditable(not pending) end
+    end
+    showStatus("Enter the console settings, then choose Done.", false)
+    lockInputs(false)
+
     function finishButton.DoClick()
-        if not isCurrentSetup() or not IsValid(callingPlayer)
+        if not setup.isCurrent() or setup.pending or not IsValid(callingPlayer)
             or not callingPlayer:IsPlayer() or not callingPlayer:Alive() then return end
-        -- Read this form at submission time; focus callbacks and globals can
-        -- miss the latest edit or leak values into another console's setup.
+        -- Read current focused controls rather than stale focus-loss callbacks.
         local enteredConsoleName = consoleNameFrame:GetValue()
         local enteredSliceDelay = tonumber(slicerTime:GetValue())
         local enteredFileType = fileType:GetSelected()
         local enteredFileName = fileName:GetValue()
-
-        -- Match the server's field rules so invalid entries remain editable.
-        -- The server still authenticates the creator and validates the packet.
         if #enteredConsoleName > 128 or string.Trim(enteredConsoleName) == ""
             or #enteredFileName > 128 or string.Trim(enteredFileName) == ""
             or enteredSliceDelay == nil or enteredSliceDelay != enteredSliceDelay
             or enteredSliceDelay <= 0 or enteredSliceDelay == math.huge
             or (enteredFileType != "data" and enteredFileType != "server" and enteredFileType != "tools") then
             callingPlayer:ChatPrint("One or more fields is invalid")
+            showStatus("Invalid fields: choose a folder, nonblank names of at most 128 bytes, and a finite positive delay.", true)
             return
         end
-
-        local consoleInformation = {enteredConsoleName, enteredSliceDelay, enteredFileType, enteredFileName, sentConsoleName}
-        retireSetup() -- Retire synchronously before sending or native removal.
-        initialParent:Close()
-        net.Start("AdminFinishedCreation")
-            net.WriteTable(consoleInformation)
-        net.SendToServer()
-
-        if enteredFileType == "tools" then
-            callingPlayer:ChatPrint("Please type !setEntity when looking at a door to link the console.")
-            net.Start("ServerWaitingForEntity")
-                net.WriteEntity(callingPlayer)
-            net.SendToServer()
+        local token = nextInitialSetupToken()
+        if not token then
+            showStatus("Setup submission is unavailable in this client session. Close this form and reconnect before trying again.", true)
+            return
         end
+        local submission = {token = token}
+        setup.pending, setupRequests[token] = submission, submission
+        function submission.reply(result)
+            if not setup.isCurrent() or setup.pending ~= submission or setupRequests[token] ~= submission
+                or type(result) ~= "table" then return end
+            if result.ok == true then
+                if type(result.name) ~= "string" or #result.name > 128 or string.Trim(result.name) == ""
+                    or result.fileType ~= enteredFileType then return end
+                retireSetup()
+                initialParent:Close()
+                if result.fileType == "tools" and IsValid(callingPlayer) and callingPlayer:IsPlayer() then
+                    -- Keep accepted settings unchanged; clean controls only for display.
+                    -- Two messages preserve the full name within ChatPrint's 255-byte limit.
+                    local displayName = result.name:gsub("[%z\1-\31\127]", " ")
+                    callingPlayer:ChatPrint('Setup accepted for console "' .. displayName .. '". Look at that console and type !setEntity first.')
+                    callingPlayer:ChatPrint("Then look at its intended door and type !setEntity to link it.")
+                end
+            elseif result.ok == false then
+                if type(result.message) ~= "string" or #result.message == 0 or #result.message > 256 then return end
+                setupRequests[token], setup.pending = nil, nil
+                lockInputs(false)
+                showStatus(result.message, true)
+            end
+        end
+        -- Register and lock before sending: a reentrant click or immediate reply
+        -- must observe the exact current submission and its immutable draft.
+        lockInputs(true)
+        showStatus("Saving setup... Closing cannot undo an accepted setup.", false)
+        net.Start("AdminFinishedCreation")
+            net.WriteTable({enteredConsoleName, enteredSliceDelay, enteredFileType, enteredFileName, sentConsoleName, token})
+        net.SendToServer()
     end
-
-    -- Local dismissal keeps this console available for a fresh setup later.
-    local laterButton = vgui.Create("DButton", initialParent)
-    laterButton:SetText("Set up later")
     function laterButton.DoClick()
-        if not isCurrentSetup() then return end
-        retireSetup()
-        initialParent:Close() -- Setup-only dismissal must not quit another hack.
+        if setup.isCurrent() then setup.close() end -- Dismissal never cancels a server commit or another hack.
     end
 
-    -- Initial-open geometry only; repeated Use retains these controls and drafts.
-    local controlHeight, controlGap = 48, 12
+    -- Center all six original controls and the visible status at the 640x480
+    -- minimum. Reopening a live form preserves these controls and their state.
+    local controlHeight, controlGap, statusHeight = 48, 12, 72
     local columnWidth = math.min(400, ScrW() - 40)
-    local columnHeight = controlHeight * 6 + controlGap * 5
+    local columnHeight = controlHeight * 6 + controlGap * 6 + statusHeight
     local columnX, columnY = (ScrW() - columnWidth) / 2, (ScrH() - columnHeight) / 2
     for index, control in ipairs({consoleNameFrame, slicerTime, fileType, fileName, laterButton, finishButton}) do
         control:SetSize(columnWidth, controlHeight)
         control:SetPos(columnX, columnY + (index - 1) * (controlHeight + controlGap))
     end
+    status:SetSize(columnWidth, statusHeight)
+    status:SetPos(columnX, columnY + (controlHeight + controlGap) * 6)
+end)
+
+net.Receive("SlicerInitialSetupReply", function()
+    local token, result = net.ReadString(), net.ReadTable()
+    if type(token) ~= "string" then return end
+    local submission = setupRequests[token]
+    if submission then submission.reply(result) end
 end)
 
 -- Configured-console edits are independent of initial setup and hacking sessions.

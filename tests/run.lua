@@ -235,6 +235,7 @@ local function openSetup(env, entityName, player)
         local panel = env.panels[i]
         if panel.class == "DFrame" then form.frame = panel
         elseif panel.class == "DComboBox" then form.folder = panel
+        elseif panel.class == "DLabel" then form.status = panel
         elseif panel.class == "DButton" and panel.text == "Done" then form.done = panel
         elseif panel.class == "DTextEntry" then entries[#entries + 1] = panel end
     end
@@ -254,6 +255,24 @@ local function openSetup(env, entityName, player)
     return form
 end
 
+local function assertSetupPending(form)
+    equal(form.frame.valid, true, "Submission stays visible until its matching server reply")
+    equal(form.done.enabled, false, "Pending Done cannot submit twice")
+    equal(form.folder.enabled, false, "Pending folder is locked")
+    for _, entry in ipairs({form.name, form.delay, form.file}) do
+        equal(entry.editable, false, "Pending submitted fields are readonly")
+    end
+    assert(form.status and form.status.text ~= "", "Pending setup explains its status")
+end
+
+local function acceptClientSetup(client, form)
+    local fields = assert(client.lastMessage("AdminFinishedCreation")).values[1]
+    assertSetupPending(form)
+    client.receive("SlicerInitialSetupReply", nil, fields[6],
+        {ok = true, name = string.lower(client.string.Trim(fields[1])), fileType = fields[3]})
+    equal(form.frame.valid, false, "Matching acceptance closes the submitted form")
+end
+
 test("setup submits current fields without requiring focus loss", function()
     local env = gmod.client()
     local form = openSetup(env)
@@ -266,7 +285,9 @@ test("setup submits current fields without requiring focus loss", function()
     equal(information[3], "data")
     equal(information[4], "Secret")
     equal(information[5], "console1")
-    equal(form.frame.valid, false)
+    equal(#information, 6, "Original five fields plus correlation token")
+    assert(type(information[6]) == "string" and information[6]:match("^[1-9]%d*$"), "Canonical request token")
+    acceptClientSetup(env, form)
 end)
 
 test("setup uses edits made after the last focus loss", function()
@@ -280,6 +301,7 @@ test("setup uses edits made after the last focus loss", function()
     equal(information[2], 3)
     equal(information[3], "server")
     equal(information[4], "NewFile")
+    acceptClientSetup(env, form)
 end)
 
 test("a new setup never reuses a completed form's values", function()
@@ -287,6 +309,7 @@ test("a new setup never reuses a completed form's values", function()
     local first = openSetup(env, "first")
     first:fill("First", "2", "data", "Secret", true)
     first.done:DoClick()
+    acceptClientSetup(env, first)
     local messageCount = #env.messages
     local second = openSetup(env, "second")
     second.done:DoClick()
@@ -308,11 +331,14 @@ test("overlapping setup forms keep their own values and console IDs", function()
     equal(information[4], "FirstFile")
     equal(information[5], "first")
     equal(second.frame.valid, true)
+    acceptClientSetup(env, first)
+    equal(second.frame.valid, true, "Acceptance closes only its own form")
     second.done:DoClick()
     information = env.lastMessage("AdminFinishedCreation").values[1]
     equal(information[1], "Second")
     equal(information[4], "SecondFile")
     equal(information[5], "second")
+    acceptClientSetup(env, second)
 end)
 
 for _, invalid in ipairs({
@@ -352,7 +378,7 @@ test("an invalid setup can be corrected and submitted", function()
     form.delay:SetText("0.5")
     form.done:DoClick()
     equal(env.lastMessage("AdminFinishedCreation").values[1][2], 0.5)
-    equal(form.frame.valid, false)
+    acceptClientSetup(env, form)
 end)
 
 for _, folder in ipairs({"data", "server", "tools"}) do
@@ -365,8 +391,14 @@ for _, folder in ipairs({"data", "server", "tools"}) do
         form:fill(name, "0.5", folder, file, true)
         form.done:DoClick()
         local payload = assert(client.lastMessage("AdminFinishedCreation")).values[1]
+        assertSetupPending(form)
+        equal(#owner.chats, 0, "Submission alone cannot announce success or door guidance")
         server.receive("AdminFinishedCreation", attacker, payload)
         equal(console.SlicerInformation, nil)
+        local rejected = assert(server.lastMessage("SlicerInitialSetupReply"))
+        equal(rejected.player, attacker, "Rejection is private to the authenticated outsider")
+        equal(rejected.values[1], payload[6]); equal(rejected.values[2].ok, false)
+        equal(form.frame.valid, true, "Another sender's rejection never reaches the creator's form")
         server.receive("AdminFinishedCreation", owner, payload)
         local info = assert(console.SlicerInformation)
         equal(info.name, string.lower(name))
@@ -374,11 +406,28 @@ for _, folder in ipairs({"data", "server", "tools"}) do
         equal(info.fileType, folder)
         equal(info.delay, 0.5)
         equal(owner.SlicerPendingConsole, folder == "tools" and console or nil)
+        local accepted = assert(server.lastMessage("SlicerInitialSetupReply"))
+        equal(accepted.player, owner); equal(accepted.values[1], payload[6])
+        equal(accepted.values[2].ok, true); equal(accepted.values[2].name, info.name)
+        equal(accepted.values[2].fileType, folder)
+        equal(#owner.chats, 0, "Server commit still waits for a matching client acknowledgement")
+        equal(form.frame.valid, true)
+        client.receive(accepted.name, nil, (table.unpack or unpack)(accepted.values))
+        equal(form.frame.valid, false)
         if folder == "tools" then
-            equal(owner.chats[#owner.chats], "Please type !setEntity when looking at a door to link the console.")
+            equal(#owner.chats, 2, "Accepted tools guidance identifies the console and then its door")
+            for _, line in ipairs(owner.chats) do
+                assert(#line <= 255, "Tools guidance respects native chat's byte limit")
+            end
+            local message = table.concat(owner.chats, " ")
+            assert(message:find(info.name, 1, true), "Guidance names the accepted normalized console")
+            local consoleAt = assert(message:find("console", 1, true), "Guidance first identifies the console")
+            local selectAt = assert(message:find("!setEntity", consoleAt, true), "Guidance explicitly selects that console")
+            assert(message:find("door", selectAt, true), "Only then select the intended door")
         else
             equal(#owner.chats, 0)
         end
+        equal(client.lastMessage("ServerWaitingForEntity"), nil, "The new flow does not emit the obsolete selector")
     end)
 end
 
@@ -553,6 +602,8 @@ dofile("tests/command-assistance.lua")(gmod, test, equal)
 dofile("tests/terminal-quit.lua")(gmod, test, equal)
 dofile("tests/terminal-reselection.lua")(gmod, test, equal)
 dofile("tests/deferred-setup.lua")(gmod, test, equal)
+dofile("tests/initial-setup-ack-core.lua")(gmod, test, equal)
+dofile("tests/initial-setup-ack-workflow.lua")(gmod, test, equal)
 dofile("tests/duplication.lua")(gmod, test, equal)
 dofile("tests/setup-layout.lua")(gmod, test, equal)
 dofile("tests/player-layout.lua")(gmod, test, equal)

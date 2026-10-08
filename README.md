@@ -11,12 +11,15 @@ and terminal-driven downloads or door unlocking.
    may submit its initial configuration. Console/file names must be nonblank,
    at most 128 bytes, and are normalized to lowercase. The delay must be a
    finite positive number of seconds; the folder is `data`, `server`, or `tools`.
-   **Done** reads the current fields, including the active text entry. Invalid
-   fields keep the form open so they can be corrected; each new form starts
-   without values from previous setups.
-3. Setting up a `tools` terminal selects it for its creator. Look at a
-   `func_door` or `func_door_rotating` and type `!setEntity` in chat to link it
-   before anyone uses it.
+   **Done** reads the current fields, including the active text entry, and waits
+   for the server's matching acknowledgement. Fields stay visible and locked
+   while submitting. A rejection keeps the draft available with a status message;
+   an acceptance closes that form. Each new form starts without previous values.
+3. Accepted `tools` setup selects that terminal for its creator. Look at the
+   intended console and type `!setEntity`; check the named selection confirmation.
+   Then look at a `func_door` or `func_door_rotating` and type `!setEntity` again
+   to link it before anyone uses it. This explicit selection keeps the choice
+   clear when several consoles have been configured.
    To choose another of your configured tools terminals, look at that terminal
    and type `!setEntity`; the confirmation names your selection. Then look at
    its intended door and type `!setEntity` again. This also recovers an older
@@ -80,9 +83,17 @@ hacking tool is not required for setup.
 Reopening a setup that is already on screen brings that same form forward and
 keeps its current fields. Different consoles keep separate forms. Closing one
 does not submit another console's configuration, release an active hack or
-change a pending door selection. Once **Done** configures a console, Use follows
-the normal hacking flow. Correct saved values through the separate edit command
-below; the initial setup packet cannot overwrite them.
+change a pending door selection. While a submission is pending, dismissal reads
+**Close** and cannot undo a setup already accepted by the server. A lost reply
+may leave the form pending until you close it; no automatic retry is promised.
+Delayed replies cannot close a later form or another console's draft. Rejected
+setup never gives door-link guidance or changes a different pending selection.
+
+Once the server accepts initial setup, Use follows the normal hacking flow.
+Correct saved values through the separate edit command below; initial setup
+cannot overwrite them. Updated client files are required for the acknowledged
+form flow. Legacy five-field setup packets retain their original server
+validation and do not receive a correlated acknowledgement.
 
 ### Correct a saved console setup
 
@@ -126,11 +137,12 @@ behavior still require an in-game smoke test.
 
 ### Setup screen size
 
-The setup form lays out its four inputs, **Set up later** and **Done** in one
-centered column when it opens. At initial viewport sizes of 640×480 or larger,
-all six controls fit with 48-pixel heights and 12-pixel gaps. The column is at
-most 400 pixels wide and leaves at least 20-pixel screen margins. This applies
-to newly spawned, deferred and copied unconfigured consoles.
+The setup form lays out its four inputs and two buttons in one centered column,
+with a wrapped status area underneath. At initial viewport sizes of 640×480 or
+larger, the six controls retain 48-pixel heights and 12-pixel gaps; the status
+area is 72 pixels high. The full 432-pixel group leaves 24-pixel vertical margins
+at 640×480. The column is at most 400 pixels wide with at least 20-pixel horizontal
+margins. This applies to newly spawned, deferred and copied unconfigured consoles.
 
 These dimensions describe initial-open geometry. An already open form does not
 relayout when the display size changes. Native rendering, mouse hit-testing,

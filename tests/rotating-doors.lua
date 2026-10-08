@@ -47,11 +47,12 @@ return function(gmod, test, equal)
     -- Relay actual setup-form output, keeping the authenticated server sender
     -- distinct from fields supplied by the client.
     local function setup(server, client, owner, console)
-        local first, entries, choice, done = #client.panels + 1, {}
+        local first, entries, choice, done, frame = #client.panels + 1, {}
         client.receive("PlayerSpawnedConsole", nil, owner, console:GetName())
         for i = first, #client.panels do
             local panel = client.panels[i]
             if panel.class == "DTextEntry" then entries[#entries + 1] = panel
+            elseif panel.class == "DFrame" then frame = panel
             elseif panel.class == "DComboBox" then choice = panel
             elseif panel.class == "DButton" and panel.text == "Done" then done = panel end
         end
@@ -61,7 +62,15 @@ return function(gmod, test, equal)
         choice.selected = "tools"
         done:DoClick()
         local packet = assert(client.lastMessage("AdminFinishedCreation"))
+        equal(frame.valid, true, "Initial setup remains visible pending acceptance")
+        local before = #server.messages
         server.receive(packet.name, owner, unpackValues(packet.values))
+        equal(#server.messages, before + 1)
+        local reply = assert(server.lastMessage("SlicerInitialSetupReply"))
+        equal(reply.player, owner); equal(reply.values[1], packet.values[1][6])
+        equal(reply.values[2].ok, true)
+        client.receive(reply.name, nil, unpackValues(reply.values))
+        equal(frame.valid, false, "Matching acceptance closes initial setup")
         return assert(console.SlicerInformation)
     end
 
