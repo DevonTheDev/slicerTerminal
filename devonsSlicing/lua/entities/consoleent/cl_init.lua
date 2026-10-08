@@ -363,6 +363,26 @@ surface.CreateFont("ConsoleFont", {
 --]]/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 -- START OF ADMIN UI
+local function setCreatorRect(panel, x, y, width, height)
+    if not isLiveCommandPanel(panel) then return end
+    panel:SetPos(x, y)
+    panel:SetSize(width, height)
+end
+
+-- Each current visible form owns its geometry and last supported screen budget.
+-- Reflow changes rectangles only; drafts, pending replies and focus stay intact.
+local function registerCreatorGeometry(form, geometry)
+    function form.reflow(width, height)
+        if not form.isCurrent() or not supportedPlayerSize(width, height)
+            or (form.width == width and form.height == height) then return end
+        geometry(width, height)
+        form.width, form.height = width, height
+    end
+    local width, height = ScrW(), ScrH()
+    if not supportedPlayerSize(width, height) then width, height = 640, 480 end
+    form.reflow(width, height)
+end
+
 local function nextInitialSetupToken()
     if type(slicerInitialSetupSerial) ~= "number" or slicerInitialSetupSerial < 0
         or slicerInitialSetupSerial % 1 ~= 0 or slicerInitialSetupSerial >= 9007199254740991 then return end
@@ -414,8 +434,6 @@ net.Receive("PlayerSpawnedConsole", function()
         retireSetup()
         if IsValid(initialParent) and not initialParent:IsMarkedForDeletion() then initialParent:Close() end
     end
-    initialParent:SetSize(ScrW(), ScrH())
-    initialParent:Center()
     initialParent:ShowCloseButton(false)
     initialParent:MakePopup()
     initialParent:SetTitle("")
@@ -526,18 +544,19 @@ net.Receive("PlayerSpawnedConsole", function()
         if setup.isCurrent() then setup.close() end -- Dismissal never cancels a server commit or another hack.
     end
 
-    -- Center all six original controls and the visible status at the 640x480
-    -- minimum. Reopening a live form preserves these controls and their state.
-    local controlHeight, controlGap, statusHeight = 48, 12, 72
-    local columnWidth = math.min(400, ScrW() - 40)
-    local columnHeight = controlHeight * 6 + controlGap * 6 + statusHeight
-    local columnX, columnY = (ScrW() - columnWidth) / 2, (ScrH() - columnHeight) / 2
-    for index, control in ipairs({consoleNameFrame, slicerTime, fileType, fileName, laterButton, finishButton}) do
-        control:SetSize(columnWidth, controlHeight)
-        control:SetPos(columnX, columnY + (index - 1) * (controlHeight + controlGap))
-    end
-    status:SetSize(columnWidth, statusHeight)
-    status:SetPos(columnX, columnY + (controlHeight + controlGap) * 6)
+    -- Keep the original centered six-row group for opening and live resizing.
+    registerCreatorGeometry(setup, function(width, height)
+        setCreatorRect(initialParent, 0, 0, width, height)
+        local controlHeight, controlGap, statusHeight = 48, 12, 72
+        local columnWidth = math.min(400, width - 40)
+        local columnHeight = controlHeight * 6 + controlGap * 6 + statusHeight
+        local columnX, columnY = (width - columnWidth) / 2, (height - columnHeight) / 2
+        for index, control in ipairs({consoleNameFrame, slicerTime, fileType, fileName, laterButton, finishButton}) do
+            setCreatorRect(control, columnX, columnY + (index - 1) * (controlHeight + controlGap),
+                columnWidth, controlHeight)
+        end
+        setCreatorRect(status, columnX, columnY + (controlHeight + controlGap) * 6, columnWidth, statusHeight)
+    end)
 end)
 
 net.Receive("SlicerInitialSetupReply", function()
@@ -550,6 +569,15 @@ end)
 -- Configured-console edits are independent of initial setup and hacking sessions.
 -- The server owns each ticket; the client only keeps its current visible form.
 local setupEditForms, setupEditTokens = {}, {}
+
+hook.Add("OnScreenSizeChanged", "SlicerCreatorFormReflow", function()
+    local width, height = ScrW(), ScrH()
+    if not supportedPlayerSize(width, height) then return end
+    for _, form in pairs(setupForms) do
+        if form.reflow then form.reflow(width, height) end
+    end
+    for _, form in pairs(setupEditForms) do form.reflow(width, height) end
+end)
 
 net.Receive("SlicerSetupEditOpen", function()
     local console = net.ReadEntity()
@@ -607,9 +635,7 @@ net.Receive("SlicerSetupEditOpen", function()
         if IsValid(frame) and not frame:IsMarkedForDeletion() then frame:Close() end
     end
 
-    local width, height = math.min(460, ScrW() - 40), 430
-    frame:SetSize(width, height)
-    frame:Center()
+    local width, height = 460, 430
     frame:SetTitle("Edit console settings")
     frame:SetDeleteOnClose(true)
     frame:SetDraggable(false)
@@ -703,6 +729,9 @@ net.Receive("SlicerSetupEditOpen", function()
             showStatus(message, true)
         end
     end
+    registerCreatorGeometry(edit, function(screenWidth, screenHeight)
+        setCreatorRect(frame, (screenWidth - width) / 2, (screenHeight - height) / 2, width, height)
+    end)
 end)
 
 net.Receive("SlicerSetupEditReply", function()

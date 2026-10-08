@@ -224,7 +224,7 @@ return function(gmod, test, equal)
         geometry(current, 800, 600, "login")
         equal(entry.parent.width, 1920, "Marked old frame stays untouched")
     end)
-    test("marked page records retire and setup geometry stays outside player reflow", function()
+    test("marked page records retire and creator geometry uses its independent reflow owner", function()
         local client = helper.fixture(1920, 1080)
         local entry = helper.entry(client)
         local session = helper.upvalue(entry.IsCurrentTerminalPage, "session")
@@ -240,10 +240,21 @@ return function(gmod, test, equal)
             local p = client.panels[i]
             positions[p] = {p.x, p.y, p.width, p.height}
         end
-        client.resize(1366, 768)
+        local readWidth, readHeight = client.ScrW, client.ScrH
+        client.ScrW, client.ScrH = function() return 1366 end, function() return 768 end
+        client.hooks.OnScreenSizeChanged.SlicerPlayerTerminalReflow()
         for panel, rectangle in pairs(positions) do
             equal(panel.x, rectangle[1]); equal(panel.y, rectangle[2])
             equal(panel.width, rectangle[3]); equal(panel.height, rectangle[4])
+        end
+        client.ScrW, client.ScrH = readWidth, readHeight
+        local setup = assert(client.slicerInitialSetupState.forms["outside-player-session"])
+        client.resize(1366, 768)
+        equal(client.slicerInitialSetupState.forms["outside-player-session"], setup)
+        equal(setup.frame.width, 1366); equal(setup.frame.height, 768)
+        equal(setup.frame.x, 0); equal(setup.frame.y, 0)
+        for panel in pairs(positions) do
+            if panel ~= setup.frame then contained(panel, 1366, 768) end
         end
     end)
 end

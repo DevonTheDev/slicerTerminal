@@ -130,8 +130,8 @@ and the server enforces the updated delay. Existing folder-specific timing
 remains: tools use one delay; data/server access and completion use two.
 
 Local callback tests cover creation, edit, acknowledgement, cancellation,
-replay, copying and complete hacking workflows. The edit form's initial layout
-fits the tested 640×480 and larger viewports. Native Garry's Mod fonts, focus,
+replay, copying and complete hacking workflows. The edit form's initial and
+resize geometry fit the tested 640×480 and larger viewports. Native Garry's Mod fonts, focus,
 mouse controls, chat targeting, packet timing and actual multiplayer/door
 behavior still require an in-game smoke test.
 
@@ -144,8 +144,29 @@ area is 72 pixels high. The full 432-pixel group leaves 24-pixel vertical margin
 at 640×480. The column is at most 400 pixels wide with at least 20-pixel horizontal
 margins. This applies to newly spawned, deferred and copied unconfigured consoles.
 
-These dimensions describe initial-open geometry. An already open form does not
-relayout when the display size changes. Native rendering, mouse hit-testing,
+Open setup and saved-edit forms now reflow when the display size changes, even
+when no player terminal is open. Setup keeps the centered column described
+above; the saved-edit frame keeps its 460×430 layout and is recentered within
+the supported viewport. Each form retains its own controls, draft text, folder
+selection, exact saved delay, status and pending acknowledgement. Resize also
+works while fields are locked for a save. Its later reply still belongs to that
+exact form and request.
+
+Same-size notifications leave geometry alone. An invalid or smaller transient
+viewport retains each form's last supported layout until a supported size
+returns. A form opened during invalid dimensions uses the minimum 640×480
+geometry budget; this does not promise fit on a genuinely smaller screen.
+
+Creator forms resize independently of the current player terminal. Reflow keeps
+input state and acknowledgement ownership, without submitting or retrying a
+save, requesting focus, changing door selection or restarting a hack. Hidden,
+retired and deletion-marked forms cannot resize a replacement through retained
+callbacks. Existing initial-setup registry behavior also survives client
+reinclude; this adds no saved-edit persistence or live-server reload guarantee.
+
+Offline tests cover actual client/server callbacks, changing rectangles,
+pending and stale replies, concurrent forms, deferred cleanup, and an unrelated
+active hack. Native rendering, mouse hit-testing, focus/caret retention,
 dropdown placement and font fit still need the Garry's Mod smoke checks below.
 
 ### Player browser screen size
@@ -180,7 +201,8 @@ the last supported layout until a supported size returns; a newly opened session
 uses at least the minimum geometry budget. The login objective's obsolete queued
 movement is stopped on a real resize so it cannot later overwrite the new
 position. Same-size events leave the layout and animation alone. Setup and
-saved-edit forms retain their separate initial-open behavior.
+saved-edit forms reflow through their own current records, independently of the
+player session.
 
 The client uses the documented
 [screen-size change hook](https://wiki.facepunch.com/gmod/GM:OnScreenSizeChanged)
@@ -316,8 +338,8 @@ texlua tests/run.lua
 The suite needs no downloaded dependencies. It runs the actual addon code with
 small Garry's Mod API doubles. Its loader translates GLua `!`, `!=`, and `//`
 comments for stock Lua without modifying command strings. The harness supports
-Lua 5.1 and newer. This pass was checked with Lua 5.3 via `texlua`, plus Lua 5.1
-and LuaJIT 2.1 through Lupa 2.6.
+Lua 5.1 and newer. This change was checked with Lua 5.1, LuaJIT 2.1 and Lua 5.3
+through the installed Lupa runtimes.
 
 Coverage includes malicious/malformed network requests, concurrent users,
 creator-only setup, stale/deleted entities, independent door links, session
@@ -450,7 +472,14 @@ emulated. Before a live rollout, use a test server to check:
   caret/selection behavior and command insertion. Change resolution during login,
   each countdown and an open Commands window; confirm the current session reflows
   while its draft, history and countdown continue. Check a sub-minimum transient
-  size followed by a supported size, and verify setup forms still need reopening
+  size followed by a supported size
+- Resize open initial setup and saved-edit forms from 1920×1080 to 640×480 and
+  back to 1366×768 while typing, after a validation error and while awaiting a
+  reply. Check every field/button/status, raw draft, selected folder, exact delay,
+  focus/caret and any open dropdown; a resize must not submit or retry the save
+- Keep two creator forms and an unrelated hacking countdown/Commands window
+  open during resizing. Close a pending form, reopen its replacement and deliver
+  the delayed reply; the replacement and unrelated hack must remain current
 - Check fonts, sounds and layouts at the clients' screen resolutions
 
 Use a fresh server session when deploying server-logic changes; live Lua
