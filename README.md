@@ -140,7 +140,7 @@ dropdown placement and font fit still need the Garry's Mod smoke checks below.
 
 The login, folder and file pages reserve separate areas for the console heading,
 file objective, browser content, **Commands**, **Quit terminal** and command input.
-The folder artwork scales with the initial viewport, keeping tools, data and
+The folder artwork scales with the supported viewport, keeping tools, data and
 server in their existing left-to-right order. Explicit `{_tools}`, `{_data}` and
 `{_server}` captions identify the commands even when the artwork is smaller.
 Three file rows have space between them and stay above the controls.
@@ -156,12 +156,32 @@ they retain their original 512-pixel size. Full console/file strings remain in
 labels, file entries and inserted commands; long headings/objectives use a
 smaller font and wrapping within their allotted areas.
 
-Each terminal session keeps its initial layout. Quit and reopen the terminal
-after changing display size. These checks execute actual client/server callbacks
-with GMod substitutes and verify rectangle containment, separation, navigation,
-help, return, quit and accepted completion. They do not establish native font
-fit, animation rendering, pointer hit-testing or live resizing. Check those in
-Garry's Mod, especially long names at the smallest resolution.
+An open player terminal now reflows its existing login, folder and file pages
+when the display size changes. The same command entry keeps its draft and
+history, and the current folder and Commands window remain open. Hidden folder
+selection also gets the new geometry, so returning to it or opening another
+page uses the same updated layout. Reflow does not submit a command, restart a
+countdown or change the server's original completion deadline.
+
+Supported sizes start at 640×480. A smaller or invalid transient viewport retains
+the last supported layout until a supported size returns; a newly opened session
+uses at least the minimum geometry budget. The login objective's obsolete queued
+movement is stopped on a real resize so it cannot later overwrite the new
+position. Same-size events leave the layout and animation alone. Setup and
+saved-edit forms retain their separate initial-open behavior.
+
+The client uses the documented
+[screen-size change hook](https://wiki.facepunch.com/gmod/GM:OnScreenSizeChanged)
+and reads the updated screen dimensions. Existing controls are resized in place;
+the addon does not request focus or replace the input/help window during reflow.
+Native help wrapping may clamp its scroll position.
+
+Local checks execute actual client/server callbacks with GMod substitutes and
+verify rectangle containment, separation, state retention, navigation, help,
+return, quit and original completion timing. They do not establish native font
+fit, animation rendering, typing/caret/focus, scrolling or pointer hit-testing.
+Check resizing in Garry's Mod during login, open Commands and each countdown,
+especially long names at the smallest resolution.
 
 ### Copy a configured console
 
@@ -415,8 +435,10 @@ emulated. Before a live rollout, use a test server to check:
   folders. Confirm their artwork/captions and all file rows are visible above
   Commands/Quit/input; return, reopen help and complete each terminal type
 - Repeat with maximum-length console/file names, checking actual wrapped text,
-  caret/selection behavior and command insertion. Quit and reopen after changing
-  resolution; a current session does not relayout
+  caret/selection behavior and command insertion. Change resolution during login,
+  each countdown and an open Commands window; confirm the current session reflows
+  while its draft, history and countdown continue. Check a sub-minimum transient
+  size followed by a supported size, and verify setup forms still need reopening
 - Check fonts, sounds and layouts at the clients' screen resolutions
 
 Use a fresh server session when deploying server-logic changes; live Lua

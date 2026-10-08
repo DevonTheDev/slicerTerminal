@@ -52,9 +52,16 @@ local function quitTerminal(session, page)
     net.SendToServer()
 end
 
--- One initial-open geometry budget shared by every player page. Keep content
+local function supportedPlayerSize(width, height)
+    return type(width) == "number" and type(height) == "number"
+        and width == width and height == height and width < math.huge and height < math.huge
+        and width >= 640 and height >= 480
+end
+
+-- One mutable geometry budget shared by every player page. Keep content
 -- between the heading/objective and the persistent command/action footer.
 local function playerLayout(width, height)
+    if not supportedPlayerSize(width, height) then width, height = 640, 480 end
     local layout = {width = width, height = height, margin = 20, gap = 12}
     layout.headerHeight = math.min(100, math.max(64, math.floor(height * 0.12)))
     layout.objectiveY, layout.objectiveHeight = layout.headerHeight + 8, 40
@@ -72,39 +79,98 @@ local function playerLayout(width, height)
     return layout
 end
 
-local function layoutPlayerLabel(label, layout, text, objective)
+local function isPlayerLayoutPanel(panel)
+    return IsValid(panel) and not panel:IsMarkedForDeletion()
+end
+
+local function setPlayerRect(panel, x, y, width, height)
+    if not isPlayerLayoutPanel(panel) then return end
+    panel:SetPos(x, y)
+    panel:SetSize(width, height)
+end
+
+-- A stage replaces its previous record; repeated visits retain at most five.
+-- Hidden folder pages still reflow, but retired sessions/marked panels never do.
+local function registerPlayerPage(session, stage, frame, background)
+    local record = {frame = frame, geometry = {}}
+    session.pages[stage] = record
+    record.reflow = function()
+        if activeTerminalSession ~= session or session.pages[stage] ~= record then return end
+        if not isPlayerLayoutPanel(frame) then
+            session.pages[stage] = nil
+            return
+        end
+        local layout = session.layout
+        setPlayerRect(frame, 0, 0, layout.width, layout.height)
+        setPlayerRect(background, 0, 0, layout.width, layout.height)
+        if isPlayerLayoutPanel(record.animatedObjective) then record.animatedObjective:Stop() end
+        for _, geometry in ipairs(record.geometry) do geometry() end
+    end
+    return record
+end
+
+local function trackPlayerGeometry(page, geometry)
+    page.geometry[#page.geometry + 1] = geometry
+    geometry()
+end
+
+local function layoutPlayerLabel(label, layout, text, objective, page)
     -- Bound long labels to their own band; keep their full value for help and
     -- command insertion. Native font wrapping/readability still needs a game check.
     label:SetFont(#text > 40 and "HackingFont" or (objective and "PlayerObjectiveFont" or "PlayerHeadingFont"))
     label:SetText(text)
     label:SetWrap(true)
     label:SetContentAlignment(5)
-    label:SetPos(layout.margin, objective and layout.objectiveY or 0)
-    label:SetSize(layout.width - layout.margin * 2, objective and layout.objectiveHeight or layout.headerHeight)
+    trackPlayerGeometry(page, function()
+        setPlayerRect(label, layout.margin, objective and layout.objectiveY or 0,
+            layout.width - layout.margin * 2, objective and layout.objectiveHeight or layout.headerHeight)
+    end)
 end
 
-local function layoutFolder(image, parent, layout, column, identity)
-    local x = layout.folderX + (column - 1) * (layout.folderSize + layout.gap)
-    image:SetSize(layout.folderSize, layout.folderSize)
-    image:SetPos(x, layout.folderY)
+local function layoutFolder(image, parent, layout, column, identity, page)
     local caption = vgui.Create("DLabel", parent)
     caption:SetFont("HackingFont")
     caption:SetText(identity)
     caption:SetTextColor(Color(220, 220, 220, 255))
     caption:SetContentAlignment(5)
-    caption:SetPos(x, layout.folderY + layout.folderSize + 8)
-    caption:SetSize(layout.folderSize, 24)
+    trackPlayerGeometry(page, function()
+        local x = layout.folderX + (column - 1) * (layout.folderSize + layout.gap)
+        setPlayerRect(image, x, layout.folderY, layout.folderSize, layout.folderSize)
+        setPlayerRect(caption, x, layout.folderY + layout.folderSize + 8, layout.folderSize, 24)
+    end)
 end
 
-local function layoutFileRow(row, layout, index)
-    row:SetSize(layout.rowWidth, layout.rowHeight)
-    row:SetPos(layout.rowX, layout.rowY + (index - 1) * (layout.rowHeight + layout.gap))
+local function layoutFileRow(row, layout, index, page)
+    trackPlayerGeometry(page, function()
+        setPlayerRect(row, layout.rowX, layout.rowY + (index - 1) * (layout.rowHeight + layout.gap),
+            layout.rowWidth, layout.rowHeight)
+    end)
 end
+
+local function layoutCommandHelp(help, layout)
+    local width = math.min(760, layout.width - layout.margin * 2)
+    local height = math.min(420, layout.contentHeight)
+    setPlayerRect(help, math.floor((layout.width - width) / 2),
+        layout.contentY + math.floor((layout.contentHeight - height) / 2), width, height)
+    -- The same docked scroll panel follows its parent through native layout.
+end
+
+hook.Add("OnScreenSizeChanged", "SlicerPlayerTerminalReflow", function()
+    local session = activeTerminalSession
+    if not session then return end
+    local width, height = ScrW(), ScrH() -- These already reflect the new size.
+    local layout = session.layout
+    if not supportedPlayerSize(width, height) or (width == layout.width and height == layout.height) then return end
+    for key, value in pairs(playerLayout(width, height)) do layout[key] = value end
+    for _, page in pairs(session.pages) do page.reflow() end
+    if isPlayerLayoutPanel(commandHelpFrame) and isPlayerLayoutPanel(commandHelpOwner)
+        and commandHelpOwner.IsCurrentTerminalPage() then
+        layoutCommandHelp(commandHelpFrame, layout)
+    end
+end)
 
 local function configureCommandAssistance(input, parent, info, stage, history, session)
     local layout = session.layout
-    input:SetSize(layout.width - layout.margin * 2, layout.inputHeight)
-    input:SetPos(layout.margin, layout.inputY)
     input.IsCurrentTerminalPage = function()
         return activeTerminalSession == session and isLiveCommandPanel(parent) and isLiveCommandPanel(input)
     end
@@ -124,11 +190,7 @@ local function configureCommandAssistance(input, parent, info, stage, history, s
         closeCommandHelp()
         commandHelpOwner = input
         commandHelpFrame = vgui.Create("DFrame", parent)
-        local helpWidth = math.min(760, layout.width - layout.margin * 2)
-        local helpHeight = math.min(420, layout.contentHeight)
-        commandHelpFrame:SetSize(helpWidth, helpHeight)
-        commandHelpFrame:SetPos(math.floor((layout.width - helpWidth) / 2),
-            layout.contentY + math.floor((layout.contentHeight - helpHeight) / 2))
+        layoutCommandHelp(commandHelpFrame, layout)
         commandHelpFrame:SetTitle("Commands - " .. info.name .. " / " .. stage)
         commandHelpFrame:SetDeleteOnClose(true)
         commandHelpFrame:ShowCloseButton(true)
@@ -179,17 +241,18 @@ local function configureCommandAssistance(input, parent, info, stage, history, s
         end
     end
     local button = vgui.Create("DButton", parent)
-    button:SetSize(160, 30)
-    button:SetPos(layout.margin, layout.actionsY)
     button:SetText("Commands (/help)")
     button.DoClick = input.ShowCommandHelp
     local quit = vgui.Create("DButton", parent)
-    quit:SetSize(160, 30)
-    quit:SetPos(layout.margin + 172, layout.actionsY)
     quit:SetText("Quit terminal")
     quit.DoClick = function()
         if isLiveCommandPanel(quit) then quitTerminal(session, parent) end
     end
+    trackPlayerGeometry(session.pages[stage], function()
+        setPlayerRect(input, layout.margin, layout.inputY, layout.width - layout.margin * 2, layout.inputHeight)
+        setPlayerRect(button, layout.margin, layout.actionsY, 160, 30)
+        setPlayerRect(quit, layout.margin + 172, layout.actionsY, 160, 30)
+    end)
 end
 
 local function handleCommandAssistance(input)
@@ -641,7 +704,7 @@ net.Receive("ServerSendsEntityInformation", function() -- Frames open
 if(!consoleInfo["inUse"]) then
     closeConsoleUI()
     local layout = playerLayout(ScrW(), ScrH())
-    local terminalSession = {player = callingPlayer, console = usedConsole, layout = layout}
+    local terminalSession = {player = callingPlayer, console = usedConsole, layout = layout, pages = {}}
     activeTerminalSession = terminalSession
 
     surface.PlaySound("code_welcome.wav")
@@ -653,7 +716,7 @@ if(!consoleInfo["inUse"]) then
     -- Creates the parent frame that we can close
    firstPage = vgui.Create("DFrame")
    firstPage:SetPos(0, 0)
-   firstPage:SetSize(ScrW(), ScrH())
+   firstPage:SetSize(layout.width, layout.height)
    firstPage:MakePopup()
    firstPage:SetDraggable(false)
    firstPage:SetTitle("")
@@ -665,9 +728,10 @@ if(!consoleInfo["inUse"]) then
 
    -- Set the background image for the hacking UI
    local backgroundImage = vgui.Create("DImage", firstPage)
-   backgroundImage:SetSize(ScrW(), ScrH())
+   backgroundImage:SetSize(layout.width, layout.height)
    backgroundImage:SetPos(0, 0)
    backgroundImage:SetImage("vgui/consoleframe1.png")
+   local loginPage = registerPlayerPage(terminalSession, "login", firstPage, backgroundImage)
    -- Creates the glitch effect for the console background
    timer.Create("firstPageGlitch", math.random(lowerBound, upperBound), 0, function()
        backgroundImage:SetImage("vgui/consoleframe2.png")
@@ -677,16 +741,17 @@ if(!consoleInfo["inUse"]) then
    end)
 
    local findFileLabel1 = vgui.Create("DLabel", firstPage)
-   layoutPlayerLabel(findFileLabel1, layout, "Locate file '" .. consoleInfo["fileName"] .. "'", true)
+   layoutPlayerLabel(findFileLabel1, layout, "Locate file '" .. consoleInfo["fileName"] .. "'", true, loginPage)
    findFileLabel1:SetTextColor(Color(255, 0, 0, 255))
    findFileLabel1:SetPos(-layout.width, layout.objectiveY)
    
    findFileLabel1:MoveTo(layout.margin, layout.objectiveY, 1, 0.2, 1)
+   loginPage.animatedObjective = findFileLabel1
 
 
    -- Prints the console identifier to the top
    local consoleNameLabel = vgui.Create("DLabel", firstPage)
-   layoutPlayerLabel(consoleNameLabel, layout, consoleInfo["name"], false)
+   layoutPlayerLabel(consoleNameLabel, layout, consoleInfo["name"], false, loginPage)
 
    -- Paints the banner
    function consoleNameLabel.Paint(self, w, h)
@@ -699,17 +764,18 @@ if(!consoleInfo["inUse"]) then
    userBox:SetFont("HackingFont")
    userBox:SetPlaceholderText("User ID")
    userBox:SetPlaceholderColor(Color(140, 140, 140, 220))
-   userBox:SetSize(100, 25)
-   userBox:SetPos((layout.width - 100) / 2, layout.contentY + (layout.contentHeight - 50) / 2)
    userBox:SetEditable(false) -- Stops the player being able to interact with the console
 
    local passBox = vgui.Create("DTextEntry", firstPage)
    passBox:SetFont("HackingFont")
    passBox:SetPlaceholderText("Password ID")
    passBox:SetPlaceholderColor(Color(140, 140, 140, 220))
-   passBox:SetSize(100, 25)
-   passBox:SetPos((layout.width - 100) / 2, layout.contentY + (layout.contentHeight - 50) / 2 + 25)
    passBox:SetEditable(false) -- Stops the player being able to interact with the console
+   trackPlayerGeometry(loginPage, function()
+       local x, y = (layout.width - 100) / 2, layout.contentY + (layout.contentHeight - 50) / 2
+       setPlayerRect(userBox, x, y, 100, 25)
+       setPlayerRect(passBox, x, y + 25, 100, 25)
+   end)
 
    -- Creates the access terminal
    local inputTerminal1 = vgui.Create("DTextEntry", firstPage)
@@ -767,7 +833,7 @@ This code sets up the second page of the console
                -- Creates the parent frame that we can close
                secondPage = vgui.Create("DFrame")
                secondPage:SetPos(0, 0)
-               secondPage:SetSize(ScrW(), ScrH())
+               secondPage:SetSize(layout.width, layout.height)
                secondPage:MakePopup()
                secondPage:SetDraggable(false)
                secondPage:SetTitle("")
@@ -779,9 +845,10 @@ This code sets up the second page of the console
 
                -- Set the background image for the hacking UI
                local backgroundImage = vgui.Create("DImage", secondPage)
-               backgroundImage:SetSize(ScrW(), ScrH())
+               backgroundImage:SetSize(layout.width, layout.height)
                backgroundImage:SetPos(0, 0)
                backgroundImage:SetImage("vgui/consoleframe1.png")
+               local folderPage = registerPlayerPage(terminalSession, "folders", secondPage, backgroundImage)
                -- Creates the glitch effect for the console background
                timer.Create("secondPageGlitch", math.random(lowerBound, upperBound), 0, function()
                    backgroundImage:SetImage("vgui/consoleframe2.png")
@@ -791,13 +858,13 @@ This code sets up the second page of the console
                end)
 
                local findFileLabel2 = vgui.Create("DLabel", secondPage)
-               layoutPlayerLabel(findFileLabel2, layout, "Locate file '" .. consoleInfo["fileName"] .. "'", true)
+               layoutPlayerLabel(findFileLabel2, layout, "Locate file '" .. consoleInfo["fileName"] .. "'", true, folderPage)
                findFileLabel2:SetTextColor(Color(255, 0, 0, 255))
 
 
                -- Prints the console identifier to the top
                local consoleNameLabel = vgui.Create("DLabel", secondPage)
-               layoutPlayerLabel(consoleNameLabel, layout, consoleInfo["name"], false)
+               layoutPlayerLabel(consoleNameLabel, layout, consoleInfo["name"], false, folderPage)
 
                -- Paints the banner
                function consoleNameLabel.Paint(self, w, h)
@@ -807,15 +874,15 @@ This code sets up the second page of the console
 
                -- Creates the images to display the different folders
                local dataFolderImage = vgui.Create("DImage", secondPage)
-               layoutFolder(dataFolderImage, secondPage, layout, 2, "{_data}")
+               layoutFolder(dataFolderImage, secondPage, layout, 2, "{_data}", folderPage)
                dataFolderImage:SetImage("vgui/folder1.png")
 
                local serverFolderImage = vgui.Create("DImage", secondPage)
-               layoutFolder(serverFolderImage, secondPage, layout, 3, "{_server}")
+               layoutFolder(serverFolderImage, secondPage, layout, 3, "{_server}", folderPage)
                serverFolderImage:SetImage("vgui/folder2.png")
 
                local toolsFolderImage = vgui.Create("DImage", secondPage)
-               layoutFolder(toolsFolderImage, secondPage, layout, 1, "{_tools}")
+               layoutFolder(toolsFolderImage, secondPage, layout, 1, "{_tools}", folderPage)
                toolsFolderImage:SetImage("vgui/folder3.png")
 
                -- Creates the access terminal
@@ -875,7 +942,7 @@ end
                        -- Creates the parent frame that we can close
                        insideData = vgui.Create("DFrame")
                        insideData:SetPos(0, 0)
-                       insideData:SetSize(ScrW(), ScrH())
+                       insideData:SetSize(layout.width, layout.height)
                        insideData:MakePopup()
                        insideData:SetDraggable(false)
                        insideData:SetTitle("")
@@ -887,9 +954,10 @@ end
 
                        -- Set the background image for the hacking UI
                        local dataBackgroundImage = vgui.Create("DImage", insideData)
-                       dataBackgroundImage:SetSize(ScrW(), ScrH())
+                       dataBackgroundImage:SetSize(layout.width, layout.height)
                        dataBackgroundImage:SetPos(0, 0)
                        dataBackgroundImage:SetImage("vgui/consoleframe1.png")
+                       local dataPage = registerPlayerPage(terminalSession, "data", insideData, dataBackgroundImage)
                        -- Creates the glitch effect for the console background
                        timer.Create("dataPageGlitch", math.random(lowerBound, upperBound), 0, function()
                            dataBackgroundImage:SetImage("vgui/consoleframe2.png")
@@ -899,13 +967,13 @@ end
                        end)
 
                        local findFileLabel3 = vgui.Create("DLabel", insideData)
-                       layoutPlayerLabel(findFileLabel3, layout, "Locate file '" .. consoleInfo["fileName"] .. "'", true)
+                       layoutPlayerLabel(findFileLabel3, layout, "Locate file '" .. consoleInfo["fileName"] .. "'", true, dataPage)
                        findFileLabel3:SetTextColor(Color(255, 0, 0, 255))
                         
 
                        -- Prints the console identifier to the top
                        local dataNameLabel = vgui.Create("DLabel", insideData)
-                       layoutPlayerLabel(dataNameLabel, layout, consoleInfo["name"] .. "/" .. acceptedFolders[1], false)
+                       layoutPlayerLabel(dataNameLabel, layout, consoleInfo["name"] .. "/" .. acceptedFolders[1], false, dataPage)
 
                        -- Paints the banner
                        function dataNameLabel.Paint(self, w, h)
@@ -914,37 +982,37 @@ end
 
                        if(consoleInfo["fileType"] == "data") then
                            local dataRequiredFile = vgui.Create("DTextEntry", insideData)
-                           layoutFileRow(dataRequiredFile, layout, 2)
+                           layoutFileRow(dataRequiredFile, layout, 2, dataPage)
                            dataRequiredFile:SetFont("HackingFont")
                            dataRequiredFile:SetText(string.upper(consoleInfo["fileName"]) .. ".data")
                            dataRequiredFile:SetEditable(false)
 
                            local randomFile1 = vgui.Create("DTextEntry", insideData)
-                           layoutFileRow(randomFile1, layout, 1)
+                           layoutFileRow(randomFile1, layout, 1, dataPage)
                            randomFile1:SetFont("HackingFont")
                            randomFile1:SetText(decoyFilenames[1] .. ".data")
                            randomFile1:SetEditable(false)
 
                            local randomFile2 = vgui.Create("DTextEntry", insideData)
-                           layoutFileRow(randomFile2, layout, 3)
+                           layoutFileRow(randomFile2, layout, 3, dataPage)
                            randomFile2:SetFont("HackingFont")
                            randomFile2:SetText(decoyFilenames[2] .. ".data")
                            randomFile2:SetEditable(false)
                        else
                            local randomFile1 = vgui.Create("DTextEntry", insideData)
-                           layoutFileRow(randomFile1, layout, 2)
+                           layoutFileRow(randomFile1, layout, 2, dataPage)
                            randomFile1:SetFont("HackingFont")
                            randomFile1:SetEditable(false)
                            randomFile1:SetText("consoleLogs.data")
 
                            local randomFile2 = vgui.Create("DTextEntry", insideData)
-                           layoutFileRow(randomFile2, layout, 1)
+                           layoutFileRow(randomFile2, layout, 1, dataPage)
                            randomFile2:SetFont("HackingFont")
                            randomFile2:SetEditable(false)
                            randomFile2:SetText("recentlyDeleted.data")
 
                            local randomFile3 = vgui.Create("DTextEntry", insideData)
-                           layoutFileRow(randomFile3, layout, 3)
+                           layoutFileRow(randomFile3, layout, 3, dataPage)
                            randomFile3:SetFont("HackingFont")
                            randomFile3:SetEditable(false)
                            randomFile3:SetText("cleaningLog.data")
@@ -1037,7 +1105,7 @@ end
                        -- Creates the parent frame that we can close
                        insideServer = vgui.Create("DFrame")
                        insideServer:SetPos(0, 0)
-                       insideServer:SetSize(ScrW(), ScrH())
+                       insideServer:SetSize(layout.width, layout.height)
                        insideServer:MakePopup()
                        insideServer:SetDraggable(false)
                        insideServer:SetTitle("")
@@ -1049,9 +1117,10 @@ end
 
                        -- Set the background image for the hacking UI
                        local serverBackgroundImage = vgui.Create("DImage", insideServer)
-                       serverBackgroundImage:SetSize(ScrW(), ScrH())
+                       serverBackgroundImage:SetSize(layout.width, layout.height)
                        serverBackgroundImage:SetPos(0, 0)
                        serverBackgroundImage:SetImage("vgui/consoleframe1.png")
+                       local serverPage = registerPlayerPage(terminalSession, "server", insideServer, serverBackgroundImage)
                        -- Creates the glitch effect for the console background
                        timer.Create("dataPageGlitch", math.random(lowerBound, upperBound), 0, function()
                            serverBackgroundImage:SetImage("vgui/consoleframe2.png")
@@ -1061,13 +1130,13 @@ end
                        end)
 
                        local findFileLabel4 = vgui.Create("DLabel", insideServer)
-                       layoutPlayerLabel(findFileLabel4, layout, "Locate file '" .. consoleInfo["fileName"] .. "'", true)
+                       layoutPlayerLabel(findFileLabel4, layout, "Locate file '" .. consoleInfo["fileName"] .. "'", true, serverPage)
                        findFileLabel4:SetTextColor(Color(255, 0, 0, 255))
 
 
                        -- Prints the console identifier to the top
                        local serverNameLabel = vgui.Create("DLabel", insideServer)
-                       layoutPlayerLabel(serverNameLabel, layout, consoleInfo["name"] .. "/" .. acceptedFolders[2], false)
+                       layoutPlayerLabel(serverNameLabel, layout, consoleInfo["name"] .. "/" .. acceptedFolders[2], false, serverPage)
 
                        -- Paints the banner
                        function serverNameLabel.Paint(self, w, h)
@@ -1076,37 +1145,37 @@ end
 
                        if(consoleInfo["fileType"] == "server") then
                            local serverRequiredFile = vgui.Create("DTextEntry", insideServer)
-                           layoutFileRow(serverRequiredFile, layout, 2)
+                           layoutFileRow(serverRequiredFile, layout, 2, serverPage)
                            serverRequiredFile:SetFont("HackingFont")
                            serverRequiredFile:SetText(string.upper(consoleInfo["fileName"]) .. ".sys")
                            serverRequiredFile:SetEditable(false)
 
                            local randomFile1 = vgui.Create("DTextEntry", insideServer)
-                           layoutFileRow(randomFile1, layout, 1)
+                           layoutFileRow(randomFile1, layout, 1, serverPage)
                            randomFile1:SetFont("HackingFont")
                            randomFile1:SetText(decoyFilenames[1] .. ".sys")
                            randomFile1:SetEditable(false)
 
                            local randomFile2 = vgui.Create("DTextEntry", insideServer)
-                           layoutFileRow(randomFile2, layout, 3)
+                           layoutFileRow(randomFile2, layout, 3, serverPage)
                            randomFile2:SetFont("HackingFont")
                            randomFile2:SetText(decoyFilenames[2] .. ".sys")
                            randomFile2:SetEditable(false)
                        else
                            local randomFile1 = vgui.Create("DTextEntry", insideServer)
-                           layoutFileRow(randomFile1, layout, 2)
+                           layoutFileRow(randomFile1, layout, 2, serverPage)
                            randomFile1:SetFont("HackingFont")
                            randomFile1:SetEditable(false)
                            randomFile1:SetText("updateCheck.sys")
 
                            local randomFile2 = vgui.Create("DTextEntry", insideServer)
-                           layoutFileRow(randomFile2, layout, 1)
+                           layoutFileRow(randomFile2, layout, 1, serverPage)
                            randomFile2:SetFont("HackingFont")
                            randomFile2:SetEditable(false)
                            randomFile2:SetText("connections.sys")
 
                            local randomFile3 = vgui.Create("DTextEntry", insideServer)
-                           layoutFileRow(randomFile3, layout, 3)
+                           layoutFileRow(randomFile3, layout, 3, serverPage)
                            randomFile3:SetFont("HackingFont")
                            randomFile3:SetEditable(false)
                            randomFile3:SetText("idCheck.sys")
@@ -1199,7 +1268,7 @@ end
                        -- Creates the parent frame that we can close
                        insideTools = vgui.Create("DFrame")
                        insideTools:SetPos(0, 0)
-                       insideTools:SetSize(ScrW(), ScrH())
+                       insideTools:SetSize(layout.width, layout.height)
                        insideTools:MakePopup()
                        insideTools:SetDraggable(false)
                        insideTools:SetTitle("")
@@ -1211,9 +1280,10 @@ end
 
                        -- Set the background image for the hacking UI
                        local toolsBackgroundImage = vgui.Create("DImage", insideTools)
-                       toolsBackgroundImage:SetSize(ScrW(), ScrH())
+                       toolsBackgroundImage:SetSize(layout.width, layout.height)
                        toolsBackgroundImage:SetPos(0, 0)
                        toolsBackgroundImage:SetImage("vgui/consoleframe1.png")
+                       local toolsPage = registerPlayerPage(terminalSession, "tools", insideTools, toolsBackgroundImage)
                        -- Creates the glitch effect for the console background
                        timer.Create("dataPageGlitch", math.random(lowerBound, upperBound), 0, function()
                            toolsBackgroundImage:SetImage("vgui/consoleframe2.png")
@@ -1223,13 +1293,13 @@ end
                        end)
 
                        local findFileLabel5 = vgui.Create("DLabel", insideTools)
-                       layoutPlayerLabel(findFileLabel5, layout, "Locate file '" .. consoleInfo["fileName"] .. "'", true)
+                       layoutPlayerLabel(findFileLabel5, layout, "Locate file '" .. consoleInfo["fileName"] .. "'", true, toolsPage)
                        findFileLabel5:SetTextColor(Color(255, 0, 0, 255))
 
 
                        -- Prints the console identifier to the top
                        local toolsNameLabel = vgui.Create("DLabel", insideTools)
-                       layoutPlayerLabel(toolsNameLabel, layout, consoleInfo["name"] .. "/" .. acceptedFolders[3], false)
+                       layoutPlayerLabel(toolsNameLabel, layout, consoleInfo["name"] .. "/" .. acceptedFolders[3], false, toolsPage)
 
                        -- Paints the banner
                        function toolsNameLabel.Paint(self, w, h)
@@ -1238,37 +1308,37 @@ end
 
                        if(consoleInfo["fileType"] == "tools") then
                            local toolsRequiredFile = vgui.Create("DTextEntry", insideTools)
-                           layoutFileRow(toolsRequiredFile, layout, 2)
+                           layoutFileRow(toolsRequiredFile, layout, 2, toolsPage)
                            toolsRequiredFile:SetFont("HackingFont")
                            toolsRequiredFile:SetText(string.upper(consoleInfo["fileName"]) .. ".exe")
                            toolsRequiredFile:SetEditable(false)
 
                            local randomFile1 = vgui.Create("DTextEntry", insideTools)
-                           layoutFileRow(randomFile1, layout, 1)
+                           layoutFileRow(randomFile1, layout, 1, toolsPage)
                            randomFile1:SetFont("HackingFont")
                            randomFile1:SetText(decoyFilenames[1] .. ".exe")
                            randomFile1:SetEditable(false)
 
                            local randomFile2 = vgui.Create("DTextEntry", insideTools)
-                           layoutFileRow(randomFile2, layout, 3)
+                           layoutFileRow(randomFile2, layout, 3, toolsPage)
                            randomFile2:SetFont("HackingFont")
                            randomFile2:SetText(decoyFilenames[2] .. ".sys")
                            randomFile2:SetEditable(false)
                        else
                            local randomFile1 = vgui.Create("DTextEntry", insideTools)
-                           layoutFileRow(randomFile1, layout, 2)
+                           layoutFileRow(randomFile1, layout, 2, toolsPage)
                            randomFile1:SetFont("HackingFont")
                            randomFile1:SetEditable(false)
                            randomFile1:SetText("mainControl.exe")
 
                            local randomFile2 = vgui.Create("DTextEntry", insideTools)
-                           layoutFileRow(randomFile2, layout, 1)
+                           layoutFileRow(randomFile2, layout, 1, toolsPage)
                            randomFile2:SetFont("HackingFont")
                            randomFile2:SetEditable(false)
                            randomFile2:SetText("washingMachine.exe")
 
                            local randomFile3 = vgui.Create("DTextEntry", insideTools)
-                           layoutFileRow(randomFile3, layout, 3)
+                           layoutFileRow(randomFile3, layout, 3, toolsPage)
                            randomFile3:SetFont("HackingFont")
                            randomFile3:SetEditable(false)
                            randomFile3:SetText("breathing.exe")
