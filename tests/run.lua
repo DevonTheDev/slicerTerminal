@@ -561,6 +561,8 @@ dofile("tests/rotating-doors.lua")(gmod, test, equal)
 dofile("tests/setup-edit-server.lua")(gmod, test, equal)
 dofile("tests/setup-edit-client.lua")(gmod, test, equal)
 dofile("tests/setup-edit-workflow.lua")(gmod, test, equal)
+dofile("tests/link-inspection.lua")(gmod, test, equal)
+dofile("tests/link-inspection-workflow.lua")(gmod, test, equal)
 
 print(string.format("\n%d passed, %d failed", passed, failed))
 if failed > 0 then os.exit(1) end

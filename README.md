@@ -45,6 +45,31 @@ and Facepunch's [map-input API](https://wiki.facepunch.com/gmod/Entity:Fire).
 needs native paired-door checks. Actual GMod lock/use behavior, map outputs and
 protection-addon compatibility still require the smoke checks below.
 
+### Inspect an existing door link
+
+Look at one of your consoles or its registered brush door and type
+`!inspectLink` in chat. The private reply identifies the console by its configured
+name and current creation ID, and identifies its registered door when the
+server can confirm both sides of that relationship. This helps distinguish
+several consoles or copies with the same name. Only the console's creator can
+inspect it; the hacking tool is not required, and inspection remains available
+during a hack.
+
+The reply distinguishes a never-linked tools console, an unavailable former
+door and a relationship that is no longer registered in the current server
+session. Unconfigured consoles get setup guidance; data/server consoles report
+their configured folder. Inspection leaves pending selections,
+saved configuration, edit forms and hacking deadlines intact. Door selection
+still follows the existing `!setEntity` workflow and its never-linked rule.
+
+Replies fit the [native chat byte limit](https://wiki.facepunch.com/gmod/Player:ChatPrint),
+with display-only control-character cleanup. Saved names are unchanged.
+[Creation IDs](https://wiki.facepunch.com/gmod/Entity:GetCreationID) can wrap;
+they are informational and are not persistent identifiers or lookup authority.
+The reply describes the addon's registered link, not the door's physical lock
+state under other map logic or protection addons. Native chat delivery,
+targeting and long-name font readability still need an in-game smoke check.
+
 ### Set up a console later
 
 Choose **Set up later** to close a console's setup without configuring or removing
@@ -350,6 +375,9 @@ emulated. Before a live rollout, use a test server to check:
 - With two players, confirm only one can enter a terminal at a time
 - Link separate sliding and rotating brush doors. Check native Lock, blocked Use,
   timed tool completion, Unlock and removal, including each map's door outputs
+- Inspect each console and door with `!inspectLink` as its creator, including
+  while another player is hacking. Check private replies, unchanged deadlines,
+  same-name copy IDs, and readability of long and multibyte console names
 - With two players, duplicate each configured terminal type, including while the
   original is occupied. Check independent configuration and new creator ownership;
   removing or undoing the copy must leave the original session and door intact

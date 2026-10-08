@@ -228,6 +228,64 @@ hook.Add("PlayerSay", "doesThePlayerSetAnEntity", function(ply, text)
     return ""
 end)
 
+local function inspectionLabel(console)
+    local information = console.SlicerInformation
+    local name = type(information) == "table" and information.name or nil
+    local label = "Console"
+    if type(name) == "string" and #name <= 128 and string.Trim(name) ~= "" then
+        -- Sanitize only the displayed copy. Keeping the whole bounded name
+        -- avoids cutting a valid multibyte character at ChatPrint's byte limit.
+        name = name:gsub("[%z\1-\31\127]", "?"):gsub("\194[\128-\159]", "?")
+            :gsub("\226\128[\168\169]", "?")
+        label = label .. " '" .. name .. "'"
+    end
+    -- Native creation IDs wrap; these are current labels, never authority.
+    return label .. " (current ID #" .. console:GetCreationID() .. "): "
+end
+
+local function inspectConsoleLink(console, information)
+    local label = inspectionLabel(console)
+    if console.SlicerInformation == nil then return label .. "needs setup. Use it to configure it." end
+    if not information then return label .. "invalid configuration; no registered link can be confirmed." end
+    if information.fileType ~= "tools" then
+        return label .. "configured for " .. information.fileType .. "; door linking is for tools consoles."
+    end
+    local door = console.SlicerDoor
+    if door == nil then return label .. "has never been linked to a door." end
+    if not IsValid(door) then return label .. "previous door is no longer available." end
+    if not supportedDoors[door:GetClass()] or linkedDoors[door] ~= console then
+        return label .. "no registered link can be confirmed in this server session."
+    end
+    return label .. "registered link to " .. door:GetClass() .. " (current ID #" .. door:GetCreationID() .. ")."
+end
+
+hook.Add("PlayerSay", "slicerInspectLink", function(ply, text)
+    if text ~= "!inspectLink" then return end
+    if not IsValid(ply) or not ply:IsPlayer() or not ply:Alive() then return "" end
+    local target = ply:GetEyeTrace().Entity
+    local message = "Look at one of your consoles or its registered door and type !inspectLink."
+    if IsValid(target) then
+        if target:GetClass() == "consoleent" and target.SlicerCreator == ply then
+            -- Validation returns a separate copy; inspection never normalizes
+            -- saved data or repairs a missing link, selection, ticket or session.
+            message = inspectConsoleLink(target, normalizeSlicerInformation(target.SlicerInformation))
+        elseif supportedDoors[target:GetClass()] then
+            local console = linkedDoors[target]
+            if IsValid(console) and console:GetClass() == "consoleent"
+                and console.SlicerCreator == ply and console.SlicerDoor == target then
+                local information = normalizeSlicerInformation(console.SlicerInformation)
+                if information and information.fileType == "tools" then
+                    message = inspectConsoleLink(console, information)
+                end
+            end
+        end
+    end
+    -- One private line stays below 255 bytes even with a 128-byte name and
+    -- maximum native IDs. No weapon, busy-state claim or network/UI is needed.
+    ply:ChatPrint(message)
+    return ""
+end)
+
 hook.Add("PlayerUse", "isUsingOurObject", function(ply, ent)
     if IsValid(linkedDoors[ent]) then
         net.Start("PlayerAlert")
