@@ -73,6 +73,35 @@ The reply describes the addon's registered link, not the door's physical lock
 state under other map logic or protection addons. Native chat delivery,
 targeting and long-name font readability still need an in-game smoke check.
 
+### List your consoles
+
+Type `!listConsoles` in chat for a private inventory of your current consoles,
+including deferred setup, configured terminals and pasted copies. You must be
+a living player; no hacking tool or eye-trace target is required. Listing remains
+available while a console is being hacked or its setup/edit form is open.
+
+Each page contains up to five consoles and uses the same complete names and
+link-state descriptions as `!inspectLink`. Use `!listConsoles 2` for page two,
+or the next-page command in the reply. A page argument requires exactly one
+ASCII space and 1–7 decimal digits beginning with 1–9. Leading zeros, signs,
+extra arguments and trailing whitespace receive private usage feedback;
+unavailable pages receive range feedback. Empty inventories get one clear reply.
+
+The list sorts by current creation ID, then entity index when IDs collide.
+Same-name consoles and colliding IDs remain separate entries. Both identifiers are
+transient: the list is a fresh snapshot on every request, so additions/removals
+can shift pages. IDs cannot select, link or otherwise authorize an action.
+Rows use the existing display-only control cleanup and fit the 255-byte chat
+limit, retaining supported names of up to 128 bytes. The reply describes the
+registered relationship in this server session; it makes no physical lock claim.
+
+Listing preserves saved configuration, pending door choices, edit tickets,
+active sessions and their deadlines. It does not repair links or change doors.
+All lines for the requested page are prepared before chat delivery. Local
+callback tests verify paging, privacy, filtering and these state boundaries;
+native chat delivery, chat-addon compatibility and long/multibyte-name
+readability remain unverified and need the in-game smoke check below.
+
 ### Set up a console later
 
 Choose **Set up later** to close a console's setup without configuring or removing
@@ -377,6 +406,14 @@ retry, immutable configuration, prior door assignments and final-link eligibilit
 changes. Active hacks cannot be redirected, including after their door is removed.
 The doubles do not certify native chat delivery or eye-trace targeting.
 
+Console-inventory tests execute the real server chat handler for strict page
+grammar, oversized input, creator-only live enumeration, deferred consoles,
+current-ID collisions, five-row pagination and all existing inspection states.
+They check full-length names, byte limits, display control cleanup, prepared
+output during callback-driven removal and preserved setup/edit/session/door
+state. The doubles establish callback and transport intent, not native chat
+delivery or compatibility with other chat addons.
+
 Rotating-door tests relay real client setup and tools commands into the server,
 then check linking, reservations, minimum delay, completion and cleanup against
 both supported classes. They also cover mixed links, refused prop/arbitrary
@@ -432,6 +469,10 @@ emulated. Before a live rollout, use a test server to check:
 - Inspect each console and door with `!inspectLink` as its creator, including
   while another player is hacking. Check private replies, unchanged deadlines,
   same-name copy IDs, and readability of long and multibyte console names
+- With more than five owned consoles, use `!listConsoles` and its next-page
+  commands. Check private replies, full-length ASCII/multibyte names, deferred
+  setup and same-name copies. List while setup/edit forms or a live hack are
+  open; verify pending choices, forms, original deadlines and doors are intact
 - With two players, duplicate each configured terminal type, including while the
   original is occupied. Check independent configuration and new creator ownership;
   removing or undoing the copy must leave the original session and door intact

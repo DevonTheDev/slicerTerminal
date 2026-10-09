@@ -286,6 +286,65 @@ hook.Add("PlayerSay", "slicerInspectLink", function(ply, text)
     return ""
 end)
 
+local listConsolesCommand = "!listConsoles"
+local consolesPerPage = 5
+
+hook.Add("PlayerSay", "slicerListConsoles", function(ply, text)
+    if text ~= listConsolesCommand and not text:find("^!listConsoles%s") then return end
+    if not IsValid(ply) or not ply:IsPlayer() or not ply:Alive() then return "" end
+
+    local page = 1
+    if text ~= listConsolesCommand then
+        -- Bound decimal text before conversion, and require exactly one ASCII
+        -- space followed by 1-7 digits without a leading zero or extra text.
+        local suffix = #text <= #listConsolesCommand + 8 and text:sub(#listConsolesCommand + 1) or ""
+        if not suffix:match("^ [1-9][0-9]*$") then
+            ply:ChatPrint("Usage: !listConsoles or !listConsoles <page> (1-7 digits, no leading zero).")
+            return ""
+        end
+        page = tonumber(suffix:sub(2))
+    end
+
+    -- Enumerate every live owned console, including deferred setup and copies
+    -- missing from the configuration registry. Sort only our separate array.
+    local consoles = {}
+    for _, console in ipairs(ents.FindByClass("consoleent")) do
+        if IsValid(console) and console:GetClass() == "consoleent" and console.SlicerCreator == ply then
+            consoles[#consoles + 1] = console
+        end
+    end
+    table.sort(consoles, function(first, second)
+        local firstID, secondID = first:GetCreationID(), second:GetCreationID()
+        if firstID == secondID then return first:EntIndex() < second:EntIndex() end
+        return firstID < secondID
+    end)
+
+    local total = #consoles
+    local pages = math.ceil(total / consolesPerPage)
+    local messages = {}
+    if total == 0 then
+        messages[1] = "You have no consoles."
+    elseif page > pages then
+        messages[1] = "Console page must be between 1 and " .. pages .. ". Use !listConsoles <page>."
+    else
+        messages[1] = "Your consoles: page " .. page .. " of " .. pages .. " (" .. total .. " total)."
+        local first = (page - 1) * consolesPerPage + 1
+        for i = first, math.min(first + consolesPerPage - 1, total) do
+            local console = consoles[i]
+            messages[#messages + 1] = inspectConsoleLink(console, normalizeSlicerInformation(console.SlicerInformation))
+        end
+        if page < pages then
+            messages[#messages + 1] = "Next page: !listConsoles " .. (page + 1) .. "."
+        elseif page > 1 then
+            messages[#messages + 1] = "First page: !listConsoles."
+        end
+    end
+    -- Prepare the complete reply before ChatPrint callbacks can remove or
+    -- change an entity. Every row retains inspection's existing byte budget.
+    for _, message in ipairs(messages) do ply:ChatPrint(message) end
+    return ""
+end)
+
 hook.Add("PlayerUse", "isUsingOurObject", function(ply, ent)
     if IsValid(linkedDoors[ent]) then
         net.Start("PlayerAlert")

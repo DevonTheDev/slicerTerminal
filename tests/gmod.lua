@@ -139,10 +139,12 @@ function M.new()
     end
     function env.entity(class)
         env.nextID = env.nextID + 1
+        local entityIndex = env.nextID
         local ent = {valid = true, class = class, id = env.nextID, name = "", inputs = {}}
         function ent:IsPlayer() return self.class == "player" end
         function ent:GetClass() return self.class end
         function ent:GetCreationID() return self.id end
+        function ent:EntIndex() return entityIndex end
         function ent:GetName() return self.name end
         function ent:SetName(value) self.name = value end
         function ent:SetModel() end
