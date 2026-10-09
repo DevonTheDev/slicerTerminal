@@ -1,5 +1,128 @@
 include("entities/consoleent/shared.lua")
 
+-- A private location snapshot, independent of forms and hacking sessions.
+local consoleLocation
+local function clearConsoleLocation()
+    consoleLocation = nil
+    hook.Remove("Think", "slicerConsoleLocation")
+end
+
+local function finiteCoordinate(value)
+    return type(value) == "number" and value == value and math.abs(value) < math.huge
+end
+
+local function validLocationVector(value)
+    return value and finiteCoordinate(value.x) and finiteCoordinate(value.y) and finiteCoordinate(value.z)
+end
+
+-- The engine UTF-8 helper checks byte structure, not Unicode scalar bounds.
+-- Validate only this bounded display label; saved console names stay untouched.
+local function validLocationLabel(label)
+    if #label > 256 then return false end
+    local position = 1
+    while position <= #label do
+        local first, second = label:byte(position, position + 1)
+        local width = first < 128 and 1 or (first >= 194 and first <= 223 and 2)
+            or (first >= 224 and first <= 239 and 3) or (first >= 240 and first <= 244 and 4)
+        if not width or position + width - 1 > #label then return false end
+        for offset = 1, width - 1 do
+            local byte = label:byte(position + offset)
+            if byte < 128 or byte > 191 then return false end
+        end
+        if (first == 224 and second < 160) or (first == 237 and second > 159)
+            or (first == 240 and second < 144) or (first == 244 and second > 143) then return false end
+        position = position + width
+    end
+    return true
+end
+
+local function liveConsoleLocation()
+    if not consoleLocation then return false end
+    local ply = LocalPlayer()
+    if CurTime() >= consoleLocation.expires or not IsValid(ply) or not ply:Alive() then
+        clearConsoleLocation()
+        return false
+    end
+    return true
+end
+
+net.Receive("SlicerConsoleLocation", function()
+    clearConsoleLocation()
+    if not net.ReadBool() then return end
+    local label, position = net.ReadString(), net.ReadVector()
+    if not validLocationVector(position) then return end
+    if not validLocationLabel(label) then label = "Console" end
+    label = label:gsub("[%z\1-\31\127]", "?"):gsub("\194[\128-\159]", "?")
+        :gsub("\226\128[\168\169]", "?")
+    consoleLocation = {label = label, position = position, expires = CurTime() + 15}
+    hook.Add("Think", "slicerConsoleLocation", function() liveConsoleLocation() end)
+end)
+
+local function fitLocationText(text, width)
+    if surface.GetTextSize(text) <= width then return text end
+    local suffix = "..."
+    while #text > 0 and surface.GetTextSize(text .. suffix) > width do
+        local last = #text
+        while last > 1 and text:byte(last) >= 128 and text:byte(last) <= 191 do last = last - 1 end
+        text = text:sub(1, last - 1)
+    end
+    return text .. suffix
+end
+
+hook.Add("HUDPaint", "slicerConsoleLocation", function()
+    if not liveConsoleLocation() then return end
+    local width, height = ScrW(), ScrH()
+    if not finiteCoordinate(width) or not finiteCoordinate(height) or width < 160 or height < 160 then return end
+    local delta = consoleLocation.position - EyePos()
+    local view = EyeAngles()
+    local forward, right, up = delta:Dot(view:Forward()), delta:Dot(view:Right()), delta:Dot(view:Up())
+    local distance = delta:Length()
+    if not validLocationVector(delta) or not finiteCoordinate(forward) or not finiteCoordinate(right)
+        or not finiteCoordinate(up) or not finiteCoordinate(distance) then return end
+    local minX, maxX, minY, maxY = 18, width - 18, 18, height - 80
+    local centerX, centerY = width / 2, (minY + maxY) / 2
+    local x, y, edge
+    if forward > 0 then
+        local screen = consoleLocation.position:ToScreen()
+        if screen.visible and finiteCoordinate(screen.x) and finiteCoordinate(screen.y)
+            and screen.x >= minX and screen.x <= maxX and screen.y >= minY and screen.y <= maxY then
+            x, y = screen.x, screen.y
+        end
+    end
+    if not x then
+        -- ToScreen mirrors points behind the camera; camera-space right/up
+        -- preserves the useful turn direction instead. Directly behind is down.
+        local dx, dy = right, -up
+        if math.abs(dx) + math.abs(dy) < 0.001 then dx, dy = 0, 1 end
+        local scale = math.max(math.abs(dx) / (maxX - centerX), math.abs(dy) / (maxY - centerY))
+        x, y, edge = centerX + dx / scale, centerY + dy / scale, true
+    end
+    local color = Color(120, 220, 255)
+    surface.SetDrawColor(color)
+    if edge then
+        local dx, dy = x - centerX, y - centerY
+        local length = math.sqrt(dx * dx + dy * dy)
+        dx, dy = dx / length, dy / length
+        surface.DrawLine(x, y, x - dx * 10 + dy * 5, y - dy * 10 - dx * 5)
+        surface.DrawLine(x, y, x - dx * 10 - dy * 5, y - dy * 10 + dx * 5)
+    else
+        surface.DrawLine(x - 5, y, x + 5, y)
+        surface.DrawLine(x, y - 5, x, y + 5)
+    end
+    local vertical = math.abs(delta.z) < 32 and "same height"
+        or string.format("%.0f %s", math.abs(delta.z), delta.z > 0 and "above" or "below")
+    local direction = forward < 0 and "behind" or "ahead"
+    local lines = {"Location snapshot (15s)", consoleLocation.label,
+        string.format("%s | %.0f units | %s", direction, distance, vertical)}
+    surface.SetFont("DermaDefault")
+    local textWidth = math.min(width - 24, 480)
+    local left = math.max(12, math.min(x - textWidth / 2, width - textWidth - 12))
+    for i, line in ipairs(lines) do
+        draw.SimpleText(fitLocationText(line, textWidth), "DermaDefault", left, y + 12 + (i - 1) * 18,
+            color, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP)
+    end
+end)
+
 local COMMAND_PROMPT = "Run commands here... (/help | Up/Down history)"
 local commandHelpFrame, commandHelpOwner
 local activeTerminalSession

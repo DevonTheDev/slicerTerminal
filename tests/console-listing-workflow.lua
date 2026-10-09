@@ -156,7 +156,7 @@ return function(gmod, test, equal)
             assert(type(line) == "string" and #line <= 255, "Listing respects ChatPrint's byte limit")
             assert(not line:find("[%z\1-\31\127]"), "Listing is readable one-line chat")
             lines[#lines + 1] = line
-            if line:match("^Console.- %(current ID #%d+%)") then rows[#rows + 1] = line end
+            if line:match("^[1-5]%. Console.- %(current ID #%d+%)") then rows[#rows + 1] = line end
         end
         assert(#rows <= 5, "At most five console rows per page")
         return rows, table.concat(lines, "\n")
@@ -166,13 +166,13 @@ return function(gmod, test, equal)
     end
     local function rowFor(rows, console)
         for _, text in ipairs(rows) do
-            if text:match("^Console.- %(current ID #" .. console:GetCreationID() .. "%)") then return text end
+            if text:match("^[1-5]%. Console.- %(current ID #" .. console:GetCreationID() .. "%)") then return text end
         end
         error("Missing current console #" .. console:GetCreationID() .. " in inventory: " .. table.concat(rows, " | "))
     end
     local function absent(rows, console)
         for _, text in ipairs(rows) do
-            assert(not text:match("^Console.- %(current ID #" .. console:GetCreationID() .. "%)"), "Unexpected foreign/removed console row")
+            assert(not text:match("^[1-5]%. Console.- %(current ID #" .. console:GetCreationID() .. "%)"), "Unexpected foreign/removed console row")
         end
     end
     local function registered(rows, console, door)

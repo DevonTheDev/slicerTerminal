@@ -72,7 +72,7 @@ return function(gmod, test, equal)
             assert(#message <= 255, "ChatPrint exceeded 255 bytes: " .. #message)
             assert(not message:find("[%z\1-\31\127]"), "ChatPrint contains an ASCII control")
             messages[#messages + 1] = message
-            if message:match("^Console.*%(current ID #") then rows[#rows + 1] = message end
+            if message:match("^[1-5]%. Console.*%(current ID #") then rows[#rows + 1] = message end
         end
         assert(#messages > 0, "Living owner received no private result")
         assert(#rows <= 5, "More than five console rows on one page")
@@ -296,7 +296,7 @@ return function(gmod, test, equal)
             equal(env.fire("PlayerSay", owner, "!inspectLink"), "")
             local expected = owner.chats[#owner.chats]
             local _, rows = listing(env, owner)
-            equal(#rows, 1); equal(rows[1], expected)
+            equal(#rows, 1); equal(rows[1], "1. " .. expected)
             contains(rows[1], state.state)
         end)
     end

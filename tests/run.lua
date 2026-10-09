@@ -620,6 +620,9 @@ dofile("tests/link-inspection.lua")(gmod, test, equal)
 dofile("tests/link-inspection-workflow.lua")(gmod, test, equal)
 dofile("tests/console-listing.lua")(gmod, test, equal)
 dofile("tests/console-listing-workflow.lua")(gmod, test, equal)
+dofile("tests/console-locator.lua")(gmod, test, equal)
+dofile("tests/console-locator-client.lua")(gmod, test, equal)
+dofile("tests/console-locator-workflow-review.lua")(gmod, test, equal)
 
 print(string.format("\n%d passed, %d failed", passed, failed))
 if failed > 0 then os.exit(1) end

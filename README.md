@@ -80,8 +80,8 @@ including deferred setup, configured terminals and pasted copies. You must be
 a living player; no hacking tool or eye-trace target is required. Listing remains
 available while a console is being hacked or its setup/edit form is open.
 
-Each page contains up to five consoles and uses the same complete names and
-link-state descriptions as `!inspectLink`. Use `!listConsoles 2` for page two,
+Each page contains up to five numbered consoles and uses the same complete names
+and link-state descriptions as `!inspectLink`. Use `!listConsoles 2` for page two,
 or the next-page command in the reply. A page argument requires exactly one
 ASCII space and 1–7 decimal digits beginning with 1–9. Leading zeros, signs,
 extra arguments and trailing whitespace receive private usage feedback;
@@ -101,6 +101,29 @@ All lines for the requested page are prepared before chat delivery. Local
 callback tests verify paging, privacy, filtering and these state boundaries;
 native chat delivery, chat-addon compatibility and long/multibyte-name
 readability remain unverified and need the in-game smoke check below.
+
+
+### Locate a listed console
+
+After `!listConsoles`, type `!locateConsole 2` to mark row 2 of your most recently
+shown page. Rows 1–5 refer to the exact consoles from that page for 60 seconds;
+they are not creation IDs. A fresh listing replaces those rows, and a malformed,
+empty or unavailable-page listing clears them. Refresh the list if a row expires,
+its console is removed, or ownership changes. Death and disconnect clear the rows.
+
+A successful request sends only you a 15-second location marker with the console's
+label, sampled position, distance in Source units and above/below guidance. Offscreen
+or behind-you locations get an edge cue. This is a location snapshot: it does not
+follow a console moved afterward or confirm that it still exists. Another successful
+locate replaces the marker; `!locateConsole clear`, expiry or death dismisses it.
+Use exactly one ASCII space followed by one row digit, or `clear`.
+
+Walk to the marker and use the normal setup, edit or linking controls. Locating
+works without looking at the console and preserves pending links, edit forms,
+active hacking sessions and their original deadlines. It does not change saved
+settings or door state. Local callback and geometry tests cover the request and
+marker lifecycle; native projection, HUD-addon compatibility, font fit and
+multiplayer delivery still need the smoke check below.
 
 ### Set up a console later
 
@@ -521,6 +544,14 @@ emulated. Before a live rollout, use a test server to check:
 - Keep two creator forms and an unrelated hacking countdown/Commands window
   open during resizing. Close a pending form, reopen its replacement and deliver
   the delayed reply; the replacement and unrelated hack must remain current
+- List several same-name consoles and locate a row on each page. Check locations
+  outside your current PVS, behind you, above/below and off screen; walk to the
+  sampled point and use its normal setup/edit/link flow. Confirm another player
+  receives no marker and cannot locate your rows. Move/remove a console afterward
+  to check the snapshot wording, then refresh, replace, clear and let markers expire
+- At 640×480 and after a live resize, locate a console with a maximum-length
+  multibyte name. Check direction, distance, label fit, death cleanup and coexistence
+  with open forms and an unrelated active hacking countdown
 - Check fonts, sounds and layouts at the clients' screen resolutions
 
 Use a fresh server session when deploying server-logic changes; live Lua

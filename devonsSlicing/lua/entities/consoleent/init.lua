@@ -6,6 +6,8 @@ include("autorun/server/sv_config.lua")
 
 local sessions = {}
 local linkedDoors = {}
+local consoleListings = {}
+local listingLifetime = 60
 
 -- Configuration flags can be changed by legacy callers independently of a
 -- reservation. Editing must also consult the actual server-owned sessions.
@@ -19,7 +21,7 @@ end
 for _, name in ipairs({
     "PlayerSpawnedConsole", "ServerSendsEntityInformation", "updateInUse",
     "PlayerDied", "playerQuitConsole", "ServerWaitingForEntity", "PlayerAlert",
-    "PlayerActivatedDoor", "destroyOnServer", "SlicerCompleted",
+    "PlayerActivatedDoor", "destroyOnServer", "SlicerCompleted", "SlicerConsoleLocation",
 }) do
     util.AddNetworkString(name)
 end
@@ -172,11 +174,13 @@ end
 net.Receive("updateInUse", function() end)
 
 hook.Add("PlayerDeath", "checkForInConsole", function(victim)
+    consoleListings[victim] = nil
     retireSlicerSetupEditsForPlayer(victim)
     releaseSession(victim, true)
 end)
 
 hook.Add("PlayerDisconnected", "slicerReleaseConsole", function(ply)
+    consoleListings[ply] = nil
     retireSlicerSetupEditsForPlayer(ply)
     releaseSession(ply, false)
     ply.SlicerPendingConsole = nil
@@ -291,6 +295,7 @@ local consolesPerPage = 5
 
 hook.Add("PlayerSay", "slicerListConsoles", function(ply, text)
     if text ~= listConsolesCommand and not text:find("^!listConsoles%s") then return end
+    if ply ~= nil then consoleListings[ply] = nil end
     if not IsValid(ply) or not ply:IsPlayer() or not ply:Alive() then return "" end
 
     local page = 1
@@ -327,12 +332,15 @@ hook.Add("PlayerSay", "slicerListConsoles", function(ply, text)
     elseif page > pages then
         messages[1] = "Console page must be between 1 and " .. pages .. ". Use !listConsoles <page>."
     else
-        messages[1] = "Your consoles: page " .. page .. " of " .. pages .. " (" .. total .. " total)."
+        messages[1] = "Your consoles: page " .. page .. " of " .. pages .. " (" .. total .. " total). Locate: !locateConsole <row>."
         local first = (page - 1) * consolesPerPage + 1
+        local rows = {}
         for i = first, math.min(first + consolesPerPage - 1, total) do
             local console = consoles[i]
-            messages[#messages + 1] = inspectConsoleLink(console, normalizeSlicerInformation(console.SlicerInformation))
+            rows[#rows + 1] = console
+            messages[#messages + 1] = #rows .. ". " .. inspectConsoleLink(console, normalizeSlicerInformation(console.SlicerInformation))
         end
+        consoleListings[ply] = {rows = rows, expires = CurTime() + listingLifetime}
         if page < pages then
             messages[#messages + 1] = "Next page: !listConsoles " .. (page + 1) .. "."
         elseif page > 1 then
@@ -343,6 +351,52 @@ hook.Add("PlayerSay", "slicerListConsoles", function(ply, text)
     -- change an entity. Every row retains inspection's existing byte budget.
     for _, message in ipairs(messages) do ply:ChatPrint(message) end
     return ""
+end)
+
+-- Row numbers belong only to this player's last displayed page. Exact entity
+-- references, rather than wrapping IDs or names, retain their identity.
+hook.Add("PlayerSay", "slicerLocateConsole", function(ply, text)
+    if text ~= "!locateConsole" and not text:find("^!locateConsole%s") then return end
+    if not IsValid(ply) or not ply:IsPlayer() or not ply:Alive() then
+        if ply ~= nil then consoleListings[ply] = nil end
+        return ""
+    end
+    if text == "!locateConsole clear" then
+        net.Start("SlicerConsoleLocation")
+            net.WriteBool(false)
+        net.Send(ply)
+        return ""
+    end
+    local row = #text == 16 and text:match("^!locateConsole ([1-5])$")
+    if not row then
+        ply:ChatPrint("Usage: !locateConsole <row> (1-5 from your last !listConsoles page), or !locateConsole clear.")
+        return ""
+    end
+    local listing = consoleListings[ply]
+    if listing and CurTime() >= listing.expires then consoleListings[ply], listing = nil, nil end
+    local console = listing and listing.rows[tonumber(row)]
+    if not IsValid(console) or console:GetClass() ~= "consoleent" or console.SlicerCreator ~= ply then
+        ply:ChatPrint("That console row is unavailable or expired. Use !listConsoles again, then !locateConsole <row>.")
+        return ""
+    end
+    net.Start("SlicerConsoleLocation")
+        net.WriteBool(true)
+        net.WriteString(inspectionLabel(console):sub(1, -3))
+        net.WriteVector(console:WorldSpaceCenter())
+    net.Send(ply)
+    return ""
+end)
+
+local nextListingCleanup = 0
+hook.Add("Think", "slicerExpireConsoleListings", function()
+    local now = CurTime()
+    if now < nextListingCleanup then return end
+    nextListingCleanup = now + 5
+    for ply, listing in pairs(consoleListings) do
+        if not IsValid(ply) or not ply:IsPlayer() or not ply:Alive() or now >= listing.expires then
+            consoleListings[ply] = nil
+        end
+    end
 end)
 
 hook.Add("PlayerUse", "isUsingOurObject", function(ply, ent)
