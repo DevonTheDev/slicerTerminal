@@ -10,14 +10,14 @@ function M.source(path)
     file:close()
     local out, i = {}, 1
     while i <= #source do
-        local rest = source:sub(i)
+        local prefix = source:sub(i, i + 1)
         local quote = source:sub(i, i)
-        local long = rest:match("^%-%-%[(=*)%[")
+        local long = source:match("^%-%-%[(=*)%[", i)
         if long ~= nil then
             local close = "]" .. long .. "]"
             local finish = assert(source:find(close, i + #long + 4, true), "unclosed comment") + #close - 1
             out[#out + 1], i = source:sub(i, finish), finish + 1
-        elseif rest:sub(1, 2) == "--" or rest:sub(1, 2) == "//" then
+        elseif prefix == "--" or prefix == "//" then
             local finish = source:find("\n", i, true) or (#source + 1)
             out[#out + 1], i = "--" .. source:sub(i + 2, finish - 1), finish
         elseif quote == '"' or quote == "'" then
@@ -32,7 +32,7 @@ function M.source(path)
                 end
             end
             out[#out + 1], i = source:sub(i, finish), finish + 1
-        elseif rest:sub(1, 2) == "!=" then
+        elseif prefix == "!=" then
             out[#out + 1], i = "~=", i + 2
         elseif quote == "!" then
             out[#out + 1], i = "not ", i + 1
