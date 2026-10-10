@@ -1681,17 +1681,31 @@ PURPOSE
 This code creates a UI for the player if they try to access a locked door
 --]]/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 local printPanel = true
+local activeDoorAlert
+
+local function layoutDoorAlert(width, height)
+    if not isPlayerLayoutPanel(activeDoorAlert) or not supportedPlayerSize(width, height) then return end
+    setPlayerRect(activeDoorAlert, 0, height - 100, width, 100)
+end
+
+hook.Add("OnScreenSizeChanged", "SlicerDoorAlertReflow", function()
+    layoutDoorAlert(ScrW(), ScrH())
+end)
 
 net.Receive("PlayerAlert", function()
 
     if(printPanel == true) then
         local alertMessage = vgui.Create("DLabel")
-        alertMessage:SetFont("FolderFont")
+        activeDoorAlert = alertMessage
+        alertMessage:SetFont("PlayerHeadingFont")
         alertMessage:SetText("This door is locked. Find a console to open it.")
         alertMessage:SetTextColor(Color(255, 0, 0, 255))
-        alertMessage:SetSize(ScrW(), 100)
-        alertMessage:SetPos(0, ScrH() - 100)
-        alertMessage:SetContentAlignment(5)
+        alertMessage:SetWrap(true)
+        alertMessage:SetContentAlignment(7)
+        alertMessage:SetTextInset(20, 10)
+        local width, height = ScrW(), ScrH()
+        if not supportedPlayerSize(width, height) then width, height = 640, 480 end
+        layoutDoorAlert(width, height)
 
         function alertMessage.Paint(self, w, h)
             draw.RoundedBox(0, 0, 0, w, h, Color(20, 20, 20, 200))
@@ -1700,7 +1714,8 @@ net.Receive("PlayerAlert", function()
         printPanel = false
 
         timer.Create("removeAlert", 4, 1, function()
-            alertMessage:Remove()
+            if IsValid(alertMessage) then alertMessage:Remove() end
+            activeDoorAlert = nil
             printPanel = true
         end)
     end

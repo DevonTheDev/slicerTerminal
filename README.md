@@ -287,6 +287,25 @@ fit, animation rendering, typing/caret/focus, scrolling or pointer hit-testing.
 Check resizing in Garry's Mod during login, open Commands and each countdown,
 especially long names at the smallest resolution.
 
+### Locked-door notice
+
+Using a linked sliding or rotating brush door shows the using player the same
+private notice: “This door is locked. Find a console to open it.” The bottom
+notice uses the existing compact heading font and wrapping so the complete
+message has room at supported sizes, starting at 640×480. An open notice moves
+with the current screen size; it keeps the same label and its original
+four-second expiry. Repeated Use during that interval does not replace it or
+restart the timer. It requests no focus and changes no door permission,
+creator draft, hacking session or completion deadline.
+
+A smaller or invalid transient viewport retains the last supported notice
+geometry until a supported size returns. A notice first opened during that
+transient uses the 640×480 budget; fit below the supported minimum is not promised.
+Local tests relay real PlayerUse packets into the client receiver and check
+rectangle containment, wrapping/font configuration, duplicate suppression,
+expiry and coexistence with an active hack and creator form. They do not verify
+native font fit, Derma wrapping, input pass-through or multiplayer delivery.
+
 ### Copy a configured console
 
 Use the ordinary Garry's Mod Duplicator to copy and paste a configured terminal.
@@ -515,6 +534,12 @@ emulated. Before a live rollout, use a test server to check:
 - With two players, confirm only one can enter a terminal at a time
 - Link separate sliding and rotating brush doors. Check native Lock, blocked Use,
   timed tool completion, Unlock and removal, including each map's door outputs
+- Use each linked brush-door class at 640×480 and 1920×1080. Read the complete
+  private locked-door notice, resize down and back up while it is visible, and
+  confirm repeated Use does not extend its four-second expiry. Trigger another
+  notice after expiry; check current-size placement and input pass-through.
+  Repeat with a creator draft and unrelated hacking countdown/Commands open;
+  check typing, focus, drafts, the original countdown and the still-locked door
 - Inspect each console and door with `!inspectLink` as its creator, including
   while another player is hacking. Check private replies, unchanged deadlines,
   same-name copy IDs, and readability of long and multibyte console names
