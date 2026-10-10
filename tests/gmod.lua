@@ -1,6 +1,8 @@
 -- Minimal test doubles for the Garry's Mod APIs used by this addon.
 local M = {}
 local root = "devonsSlicing/lua/"
+local sourceCache, sourceCacheBytes = {}, 0
+local sourceCacheLimit = 1024 * 1024
 
 -- Translate only GLua operators/comments, preserving quoted strings and long
 -- comments. This lets stock Lua execute the actual addon rather than a copy.
@@ -8,6 +10,11 @@ function M.source(path)
     local file = assert(io.open(path, "r"))
     local source = file:read("*a")
     file:close()
+    -- Always read current bytes. Retain only translated strings, never chunks
+    -- or environments, so include still compiles separately for every fixture.
+    for _, entry in ipairs(sourceCache) do
+        if entry.path == path and entry.source == source then return entry.output end
+    end
     local out, i = {}, 1
     while i <= #source do
         local prefix = source:sub(i, i + 1)
@@ -40,7 +47,19 @@ function M.source(path)
             out[#out + 1], i = quote, i + 1
         end
     end
-    return table.concat(out)
+    local output = table.concat(out)
+    local bytes = #source + #output
+    if bytes <= sourceCacheLimit then
+        -- FIFO bounds both entry count and retained source/output bytes. Do not
+        -- alter valid entries until translation succeeds, or for oversized input.
+        while #sourceCache >= 8 or sourceCacheBytes + bytes > sourceCacheLimit do
+            local oldest = table.remove(sourceCache, 1)
+            sourceCacheBytes = sourceCacheBytes - #oldest.source - #oldest.output
+        end
+        sourceCache[#sourceCache + 1] = {path = path, source = source, output = output}
+        sourceCacheBytes = sourceCacheBytes + bytes
+    end
+    return output
 end
 
 local function copy(value)

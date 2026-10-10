@@ -597,6 +597,7 @@ test("all five addon Lua files compile with GLua syntax translation", function()
     end
 end)
 
+dofile("tests/source-cache.lua")(gmod, test, equal)
 dofile("tests/completion.lua")(gmod, test, equal)
 dofile("tests/command-assistance.lua")(gmod, test, equal)
 dofile("tests/countdown-submission.lua")(gmod, test, equal)
