@@ -142,13 +142,49 @@ native chat delivery, chat-addon compatibility and long/multibyte-name
 readability remain unverified and need the in-game smoke check below.
 
 
-### Locate a listed console
+### Find a console by its saved name
 
-After `!listConsoles`, type `!locateConsole 2` to mark row 2 of your most recently
-shown page. Rows 1–5 refer to the exact consoles from that page for 60 seconds;
-they are not creation IDs. A fresh listing replaces those rows, and a malformed,
-empty or unavailable-page listing clears them. Refresh the list if a row expires,
+Type `!findConsoles 1 reactor west` for a private first page of your consoles
+whose saved names contain `reactor west`. Always include the page:
+`!findConsoles <page> <text>`. Use the full next-page command in the reply to
+repeat the same search. Results contain up to five numbered matches, with the
+same complete names, link descriptions, ordering and locate controls as the full
+inventory. Each request searches afresh, so additions, removals and renames can
+shift pages. `!listConsoles` always shows the full inventory.
+
+Search is literal and folds only ASCII A–Z to a–z. Internal spaces, numbers,
+punctuation, quotes and backslashes are part of the name to match; there are no
+wildcards or quote/escape rules. For example, `!findConsoles 1 2` searches for
+the digit `2`, and `!findConsoles 1 [a].%` searches for those exact characters.
+Non-ASCII bytes stay distinct: `É` and `é`, or composed and decomposed accents,
+are not equivalent. Matching uses saved names, not their display-only cleanup.
+
+Use exactly one ASCII space before the page and before the first text byte.
+The page requires 1–7 decimal digits beginning with 1–9; the text requires
+1–128 bytes, no leading/trailing ASCII spaces and no ASCII controls, UTF-8 C1
+controls or Unicode line/paragraph separators. Malformed requests receive one
+private usage reply, without echoing the input. Unavailable pages receive range
+feedback; no matches directs you to `!listConsoles`, including setup-needed
+consoles with no saved name. A valid saved name remains searchable even if other
+settings or a door link are broken.
+
+Only your current live consoles' saved names are searched. Internal IDs, file
+names, folder/state descriptions and other owners' consoles are not searched.
+Search needs a living player but no tool or target; it preserves settings,
+pending links, setup/edit forms, active hacks and deadlines. It sends private
+chat only and leaves any existing location marker alone.
+
+### Locate a listed or found console
+
+After `!listConsoles` or `!findConsoles`, type `!locateConsole 2` to mark row 2
+of your most recently shown list or search page. Rows 1–5 refer to the exact
+consoles from that page for 60 seconds; they are not creation IDs. A fresh list
+or search replaces those rows, and a malformed, empty or unavailable-page
+request clears them. Refresh the list or search if a row expires,
 its console is removed, or ownership changes. Death and disconnect clear the rows.
+Locating does not rerun a search: a renamed console remains the same row while
+it is still yours, and its current name and position are used. Clearing the
+marker leaves unexpired rows usable.
 
 A successful request sends only you a 15-second location marker with the console's
 label, sampled position, distance in Source units and above/below guidance. Offscreen
@@ -536,6 +572,13 @@ output during callback-driven removal and preserved setup/edit/session/door
 state. The doubles establish callback and transport intent, not native chat
 delivery or compatibility with other chat addons.
 
+Console-search tests exercise actual PlayerSay callbacks for byte limits,
+literal ASCII folding, Unicode distinctions, private ownership filtering,
+fresh pagination and shared exact-reference locate snapshots. A workflow checks
+pending setup/edit acknowledgements, deferred copies, pending links and an
+unrelated hack's original deadline. Native maximum command entry length,
+multibyte rendering and multiplayer privacy still require an in-game check.
+
 Rotating-door tests relay real client setup and tools commands into the server,
 then check linking, reservations, minimum delay, completion and cleanup against
 both supported classes. They also cover mixed links, refused prop/arbitrary
@@ -621,6 +664,11 @@ emulated. Before a live rollout, use a test server to check:
   commands. Check private replies, full-length ASCII/multibyte names, deferred
   setup and same-name copies. List while setup/edit forms or a live hack are
   open; verify pending choices, forms, original deadlines and doors are intact
+- Use `!findConsoles 1 <text>` with mixed ASCII case, numeric names, literal
+  punctuation and 128-byte ASCII/multibyte text. Check what the native chat
+  entry accepts, private filtered pages and repeatable page hints. Locate a
+  search row, rename/remove its console, then switch back to the full list;
+  verify current ownership, exact rows, expiry and the existing marker lifecycle
 - With two players, duplicate each configured terminal type, including while the
   original is occupied. Check independent configuration and new creator ownership;
   removing or undoing the copy must leave the original session and door intact

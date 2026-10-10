@@ -370,6 +370,66 @@ end)
 local listConsolesCommand = "!listConsoles"
 local consolesPerPage = 5
 
+-- Only ASCII A-Z fold. Preserve every other saved byte, independently of
+-- locale, Unicode normalization and display-only control cleanup.
+local function foldConsoleName(name)
+    return (name:gsub("[A-Z]", function(character)
+        return string.char(string.byte(character) + 32)
+    end))
+end
+
+local function showConsolePage(ply, page, query)
+    -- Enumerate every live owned console, including deferred setup and copies
+    -- missing from the configuration registry. Sort only our separate array.
+    local consoles = {}
+    local foldedQuery = query and foldConsoleName(query)
+    for _, console in ipairs(ents.FindByClass("consoleent")) do
+        if IsValid(console) and console:GetClass() == "consoleent" and console.SlicerCreator == ply then
+            local name = query and type(console.SlicerInformation) == "table" and console.SlicerInformation.name or nil
+            if not query or (type(name) == "string" and #name <= 128 and string.Trim(name) ~= ""
+                and foldConsoleName(name):find(foldedQuery, 1, true)) then
+                consoles[#consoles + 1] = console
+            end
+        end
+    end
+    table.sort(consoles, function(first, second)
+        local firstID, secondID = first:GetCreationID(), second:GetCreationID()
+        if firstID == secondID then return first:EntIndex() < second:EntIndex() end
+        return firstID < secondID
+    end)
+
+    local total = #consoles
+    local pages = math.ceil(total / consolesPerPage)
+    local messages = {}
+    if total == 0 then
+        messages[1] = query and "No matching console names. Use !listConsoles for all your consoles, including those needing setup."
+            or "You have no consoles."
+    elseif page > pages then
+        messages[1] = query and ("Search page must be between 1 and " .. pages .. ". Use !findConsoles <page> <text>.")
+            or ("Console page must be between 1 and " .. pages .. ". Use !listConsoles <page>.")
+    else
+        messages[1] = (query and "Your matching consoles: page " or "Your consoles: page ") .. page .. " of " .. pages
+            .. " (" .. total .. (query and " matches" or " total") .. "). Locate: !locateConsole <row>."
+        local first = (page - 1) * consolesPerPage + 1
+        local rows = {}
+        for i = first, math.min(first + consolesPerPage - 1, total) do
+            local console = consoles[i]
+            rows[#rows + 1] = console
+            messages[#messages + 1] = #rows .. ". " .. inspectConsoleLink(console, normalizeSlicerInformation(console.SlicerInformation))
+        end
+        consoleListings[ply] = {rows = rows, expires = CurTime() + listingLifetime}
+        if page < pages then
+            messages[#messages + 1] = query and ("Next page: !findConsoles " .. (page + 1) .. " " .. query)
+                or ("Next page: !listConsoles " .. (page + 1) .. ".")
+        elseif page > 1 then
+            messages[#messages + 1] = query and ("First page: !findConsoles 1 " .. query) or "First page: !listConsoles."
+        end
+    end
+    -- Prepare the complete reply before ChatPrint callbacks can remove or
+    -- change an entity. Every row retains inspection's existing byte budget.
+    for _, message in ipairs(messages) do ply:ChatPrint(message) end
+end
+
 hook.Add("PlayerSay", "slicerListConsoles", function(ply, text)
     if text ~= listConsolesCommand and not text:find("^!listConsoles%s") then return end
     if ply ~= nil then consoleListings[ply] = nil end
@@ -387,46 +447,26 @@ hook.Add("PlayerSay", "slicerListConsoles", function(ply, text)
         page = tonumber(suffix:sub(2))
     end
 
-    -- Enumerate every live owned console, including deferred setup and copies
-    -- missing from the configuration registry. Sort only our separate array.
-    local consoles = {}
-    for _, console in ipairs(ents.FindByClass("consoleent")) do
-        if IsValid(console) and console:GetClass() == "consoleent" and console.SlicerCreator == ply then
-            consoles[#consoles + 1] = console
-        end
-    end
-    table.sort(consoles, function(first, second)
-        local firstID, secondID = first:GetCreationID(), second:GetCreationID()
-        if firstID == secondID then return first:EntIndex() < second:EntIndex() end
-        return firstID < secondID
-    end)
+    showConsolePage(ply, page)
+    return ""
+end)
 
-    local total = #consoles
-    local pages = math.ceil(total / consolesPerPage)
-    local messages = {}
-    if total == 0 then
-        messages[1] = "You have no consoles."
-    elseif page > pages then
-        messages[1] = "Console page must be between 1 and " .. pages .. ". Use !listConsoles <page>."
-    else
-        messages[1] = "Your consoles: page " .. page .. " of " .. pages .. " (" .. total .. " total). Locate: !locateConsole <row>."
-        local first = (page - 1) * consolesPerPage + 1
-        local rows = {}
-        for i = first, math.min(first + consolesPerPage - 1, total) do
-            local console = consoles[i]
-            rows[#rows + 1] = console
-            messages[#messages + 1] = #rows .. ". " .. inspectConsoleLink(console, normalizeSlicerInformation(console.SlicerInformation))
-        end
-        consoleListings[ply] = {rows = rows, expires = CurTime() + listingLifetime}
-        if page < pages then
-            messages[#messages + 1] = "Next page: !listConsoles " .. (page + 1) .. "."
-        elseif page > 1 then
-            messages[#messages + 1] = "First page: !listConsoles."
-        end
+hook.Add("PlayerSay", "slicerFindConsoles", function(ply, text)
+    if text ~= "!findConsoles" and not text:find("^!findConsoles%s") then return end
+    if ply ~= nil then consoleListings[ply] = nil end
+    if not IsValid(ply) or not ply:IsPlayer() or not ply:Alive() then return "" end
+
+    -- Bound the complete command before extracting, converting or folding.
+    -- The explicit page keeps numeric names and the remaining literal text
+    -- unambiguous, with no quoting, escaping, wildcard or retained-query state.
+    local page, query
+    if #text <= 150 then page, query = text:match("^!findConsoles ([1-9][0-9]*) (.+)$") end
+    if not page or #page > 7 or #query > 128 or query:sub(1, 1) == " " or query:sub(-1) == " "
+        or query:find("[%z\1-\31\127]") or query:find("\194[\128-\159]") or query:find("\226\128[\168\169]") then
+        ply:ChatPrint("Usage: !findConsoles <page> <text> (1-7 page digits, no leading zero; 1-128 text bytes, no edge spaces or controls).")
+        return ""
     end
-    -- Prepare the complete reply before ChatPrint callbacks can remove or
-    -- change an entity. Every row retains inspection's existing byte budget.
-    for _, message in ipairs(messages) do ply:ChatPrint(message) end
+    showConsolePage(ply, tonumber(page), query)
     return ""
 end)
 
@@ -446,14 +486,14 @@ hook.Add("PlayerSay", "slicerLocateConsole", function(ply, text)
     end
     local row = #text == 16 and text:match("^!locateConsole ([1-5])$")
     if not row then
-        ply:ChatPrint("Usage: !locateConsole <row> (1-5 from your last !listConsoles page), or !locateConsole clear.")
+        ply:ChatPrint("Usage: !locateConsole <row> (1-5 from your last !listConsoles or !findConsoles page), or !locateConsole clear.")
         return ""
     end
     local listing = consoleListings[ply]
     if listing and CurTime() >= listing.expires then consoleListings[ply], listing = nil, nil end
     local console = listing and listing.rows[tonumber(row)]
     if not IsValid(console) or console:GetClass() ~= "consoleent" or console.SlicerCreator ~= ply then
-        ply:ChatPrint("That console row is unavailable or expired. Use !listConsoles again, then !locateConsole <row>.")
+        ply:ChatPrint("That console row is unavailable or expired. Use !listConsoles or !findConsoles again, then !locateConsole <row>.")
         return ""
     end
     net.Start("SlicerConsoleLocation")
