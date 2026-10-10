@@ -274,6 +274,39 @@ hook.Add("PlayerSay", "slicerResetLink", function(ply, text)
     return ""
 end)
 
+hook.Add("PlayerSay", "slicerUnlinkConsole", function(ply, text)
+    if text ~= "!unlinkConsole" then return end
+    if not IsValid(ply) or not ply:IsPlayer() or not ply:Alive() then return "" end
+    local console = ply:GetEyeTrace().Entity
+    local information = IsValid(console) and console:GetClass() == "consoleent" and console.SlicerCreator == ply
+        and normalizeSlicerInformation(console.SlicerInformation)
+    if not information or information.fileType ~= "tools" or console.SlicerInformation.inUse
+        or slicerConsoleHasActiveSession(console) then
+        ply:ChatPrint("Look at one of your configured, idle tools consoles and type !unlinkConsole.")
+        return ""
+    end
+    local label, door, message = inspectionLabel(console), console.SlicerDoor
+    if door == nil then
+        message = "has no door link. Use !setEntity to select it."
+    elseif not IsValid(door) then
+        message = "previous door is no longer available. Use !resetLink on this console."
+    elseif not supportedDoors[door:GetClass()] or linkedDoors[door] ~= console then
+        message = "no registered link can be confirmed; nothing was changed."
+    else
+        -- Relinquish only this proven association before native input can
+        -- remove the console or reenter linking. Never roll back over a new link.
+        console.SlicerDoor, linkedDoors[door] = nil, nil
+        local sent = pcall(door.Fire, door, "Unlock")
+        message = sent
+            and "old link cleared; Unlock sent. If still unlinked, use !setEntity here, then on a door."
+            or "old link cleared; Unlock failed. Check the previous door before using !setEntity."
+    end
+    -- Native input may remove either entity. Report the captured old association
+    -- without inspecting the console again or promising physical door movement.
+    if IsValid(ply) then ply:ChatPrint(label .. message) end
+    return ""
+end)
+
 local function inspectConsoleLink(console, information)
     local label = inspectionLabel(console)
     if console.SlicerInformation == nil then return label .. "needs setup. Use it to configure it." end

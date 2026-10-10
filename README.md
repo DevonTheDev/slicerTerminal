@@ -65,6 +65,27 @@ must explicitly select the recovered console before choosing its new door.
 It clears only the unavailable door association and its matching registration;
 it does not unlock doors or change other consoles' links or sessions.
 
+### Correct a live door assignment
+
+Look at your configured, idle tools console and type `!unlinkConsole` to clear
+its current registered live door link and send that previous door one `Unlock`
+input. This preserves the same console, its saved settings, pending selections
+and open edit form. To choose another door, look at that console and type
+`!setEntity`, then look at the intended `func_door` or `func_door_rotating` and
+type `!setEntity` again. The hacking tool is not required for unlinking.
+
+Only the living creator can unlink. A busy flag or an actual hacking session
+blocks it. The server must confirm the exact current registration; unsupported,
+foreign or unregistered pointers are refused without repair. Repeating unlink
+on an unlinked console sends no further input. A removed former door still uses
+`!resetLink`, which continues to refuse live doors. There is no admin override,
+map persistence or automatic repair after a live Lua refresh.
+
+The private reply reports the previous association and whether sending `Unlock`
+succeeded, not physical movement or protection-addon acceptance. If input fails,
+the old association stays cleared; check that previous door before relinking.
+Native input that removes a console or establishes a newer link is not undone.
+
 ### Inspect an existing door link
 
 Look at one of your consoles or its registered brush door and type
@@ -500,6 +521,14 @@ and removal cleanup. Exact state snapshots check that only the obsolete binding
 and its owned registry entry change. Native eye traces, chat delivery and brush
 door behavior still need the smoke checks below.
 
+Live-unlink tests relay real setup, link A, explicit unlink, selection, link B
+and actual client completion at the original server deadline in both brush-door
+class directions. They check exact preservation of settings, pending selection,
+edit tickets and unrelated reservations; creator/session/registry refusals;
+bounded private replies; repeated requests; and native-input reentry, removal
+and failure without clearing a newer link. Input recording does not certify
+native unlocking, map outputs or protection behavior.
+
 Deferred-setup tests follow spawn, local dismissal, creator Use, configuration and
 the existing hack/door flows. They check duplicate-form focus, independent
 terminals, retired callbacks and creator ownership. Native focus transfer,
@@ -603,6 +632,13 @@ emulated. Before a live rollout, use a test server to check:
   Check private replies, retained setup/edit drafts and other pending choices.
   Try reset during a hack, on a live door link, as another player and on an
   unconfigured/data/server console; verify no link changes or door unlocks
+- Link an idle tools console to live door A, use `!unlinkConsole` on the console,
+  and verify A can be used. Explicitly select the same console and link door B;
+  complete the hack and verify only B receives the later unlock. Repeat with
+  sliding and rotating doors, another linked console and an open edit form.
+  Check private feedback and protection/map-output behavior. Try unlink during
+  a hack, as another player and after a lost registry; confirm no unauthorized
+  unlock or automatic repair
 - At 640×480 and a normal desktop resolution, log in and inspect all three
   folders. Confirm their artwork/captions and all file rows are visible above
   Commands/Quit/input; return, reopen help and complete each terminal type
