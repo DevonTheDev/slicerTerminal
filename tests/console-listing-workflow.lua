@@ -331,7 +331,15 @@ return function(gmod, test, equal)
             local timer = assert(hackClient.timers.AccessDelay)
             server.now = 20.5; registered(listing(server, owner), console, door)
             equal(hackClient.timers.AccessDelay, timer, "Inventory leaves the actual login timer intact")
-            hackClient.command("/q[terminal]"); relay(server, owner, hackClient.lastMessage("playerQuitConsole"))
+            hackClient.command("/q[terminal]")
+            equal(hackClient.lastMessage("playerQuitConsole"), nil, "Pending login ignores typed quit")
+            equal(hackClient.timers.AccessDelay, timer, "Typed quit preserves the pending login")
+            local quit
+            for _, panel in ipairs(hackClient.firstPage.children) do
+                if panel.class == "DButton" and panel.text == "Quit terminal" then quit = panel end
+            end
+            assert(quit, "Missing countdown quit button"):DoClick()
+            relay(server, owner, hackClient.lastMessage("playerQuitConsole"))
             equal(console.SlicerInformation.inUse, false); same(door.inputs, {"Lock"}, "Quit inputs")
             server.receive("PlayerActivatedDoor", owner, console)
             equal(console.removed, nil, "Listing grants no completion authority after quit")

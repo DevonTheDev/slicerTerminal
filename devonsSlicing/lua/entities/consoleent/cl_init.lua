@@ -383,6 +383,9 @@ end
 
 local function handleCommandAssistance(input)
     if not IsValid(input) or not input.IsCurrentTerminalPage() then return true end
+    -- Reject queued submissions before history, help, sounds or navigation.
+    if timer.Exists("AccessDelay") or timer.Exists("DownloadDataFile")
+        or timer.Exists("DownloadServerFile") then return true end
     local value = input:GetValue()
     if string.Trim(value) ~= "" and #value <= 512 then
         input:AddHistory(value)
@@ -1021,7 +1024,9 @@ This code checks to see if the entered value is equal to the access command, and
 --]]/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
        if(string.lower(inputTerminal1:GetValue()) == "/a[" .. consoleInfo["name"] .. "]") then
+           inputTerminal1:SetEditable(false) -- Lock before another input callback can run.
            timer.Create("AccessDelay", consoleInfo["delay"], 1, function()
+               if not inputTerminal1.IsCurrentTerminalPage() then return end
                timer.Remove("AccessDelay")
                
 --[[/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1267,7 +1272,9 @@ end
                            end
                            if(string.lower(dataInputTerminal:GetValue()) == "/d" .. acceptedFolders[1] .. "/" .. consoleInfo["fileName"] .. ".data") then
                                if(consoleInfo["fileType"] == "data") then
+                                   dataInputTerminal:SetEditable(false) -- Lock before another input callback can run.
                                    timer.Create("DownloadDataFile", consoleInfo["delay"], 1, function()
+                                       if not dataInputTerminal.IsCurrentTerminalPage() then return end
                                        closeConsoleUI()
 
                                        net.Start("destroyOnServer")
@@ -1276,9 +1283,8 @@ end
 
                                    end)
                                    hook.Add("Think", "downloadDataFile", function()
-                                       if(timer.Exists("DownloadDataFile")) then
+                                       if(dataInputTerminal.IsCurrentTerminalPage() and timer.Exists("DownloadDataFile")) then
                                            local timeLeft = math.Round(timer.TimeLeft("DownloadDataFile"), 2) -- Sets the time left = to 2 decimal places (aesthetics)
-                                           dataInputTerminal:SetEditable(false) -- Prevents the player typing in the box once the countdown has started
                                            dataInputTerminal:SetText("")
                                            if(timeLeft > 0.01) then
                                                dataInputTerminal:SetPlaceholderColor(Color(36, 209, 36, 255))
@@ -1430,7 +1436,9 @@ end
                            end
                            if(string.lower(serverInputTerminal:GetValue()) == "/d" .. acceptedFolders[2] .. "/" .. consoleInfo["fileName"] .. ".sys") then
                                if(consoleInfo["fileType"] == "server") then
+                                   serverInputTerminal:SetEditable(false) -- Lock before another input callback can run.
                                    timer.Create("DownloadServerFile", consoleInfo["delay"], 1, function()
+                                       if not serverInputTerminal.IsCurrentTerminalPage() then return end
                                        closeConsoleUI()
 
                                        net.Start("destroyOnServer")
@@ -1439,9 +1447,8 @@ end
 
                                    end)
                                    hook.Add("Think", "downloadServerFile", function()
-                                       if(timer.Exists("DownloadServerFile")) then
+                                       if(serverInputTerminal.IsCurrentTerminalPage() and timer.Exists("DownloadServerFile")) then
                                            local timeLeft = math.Round(timer.TimeLeft("DownloadServerFile"), 2) -- Sets the time left = to 2 decimal places (aesthetics)
-                                           serverInputTerminal:SetEditable(false) -- Prevents the player typing in the box once the countdown has started
                                            serverInputTerminal:SetText("")
                                            if(timeLeft > 0.01) then
                                             serverInputTerminal:SetPlaceholderColor(Color(36, 209, 36, 255))
@@ -1637,9 +1644,8 @@ PURPOSE
 This code creates the countdown timer for the initial access
 --]]/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
             hook.Add("Think", "printDelay", function() -- Runs this function every tick of the server
-                if(timer.Exists("AccessDelay")) then
+                if(inputTerminal1.IsCurrentTerminalPage() and timer.Exists("AccessDelay")) then
                     local timeLeft = math.Round(timer.TimeLeft("AccessDelay"), 2) -- Sets the time left = to 2 decimal places (aesthetics)
-                    inputTerminal1:SetEditable(false) -- Prevents the player typing in the box once the countdown has started
                     inputTerminal1:SetText("")
                     if(timeLeft > 0.01) then
                         inputTerminal1:SetPlaceholderColor(Color(36, 209, 36, 255))

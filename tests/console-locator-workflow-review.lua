@@ -253,7 +253,15 @@ return function(gmod, test, equal)
         for name in pairs(client.hooks.Think) do assert(existing[name], "Locator cleanup hook survived expiry") end
         locate(server, client, owner, 1, console); locate(server, client, owner, "clear")
         for name, callback in pairs(existing) do equal(client.hooks.Think[name], callback) end
-        client.command("/q[terminal]"); relay(server, owner, client.lastMessage("playerQuitConsole"))
+        client.command("/q[terminal]")
+        equal(client.lastMessage("playerQuitConsole"), nil, "Pending login ignores typed quit")
+        equal(client.timers.AccessDelay, login, "Typed quit preserves the pending login")
+        local quit
+        for _, panel in ipairs(client.firstPage.children) do
+            if panel.class == "DButton" and panel.text == "Quit terminal" then quit = panel end
+        end
+        assert(quit, "Missing countdown quit button"):DoClick()
+        relay(server, owner, client.lastMessage("playerQuitConsole"))
         equal(console.SlicerInformation.inUse, false); client.assertClosed()
     end)
 

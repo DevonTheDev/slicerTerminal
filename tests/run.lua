@@ -599,6 +599,7 @@ end)
 
 dofile("tests/completion.lua")(gmod, test, equal)
 dofile("tests/command-assistance.lua")(gmod, test, equal)
+dofile("tests/countdown-submission.lua")(gmod, test, equal)
 dofile("tests/terminal-quit.lua")(gmod, test, equal)
 dofile("tests/terminal-reselection.lua")(gmod, test, equal)
 dofile("tests/deferred-setup.lua")(gmod, test, equal)

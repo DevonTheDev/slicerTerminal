@@ -352,6 +352,11 @@ For a terminal named `terminal` and file named `secret`:
 | Run a door tool | `/r{_tools}/secret.exe` |
 | Quit from login/folder selection | `/q[terminal]` |
 
+Starting a login or download immediately locks its command input. Repeated
+submissions cannot restart the wait or leave the current page. During the
+countdown, use **Commands (/help)** to read the reference or **Quit terminal**
+to cancel. Commands and folder navigation work normally outside a countdown.
+
 Click **Quit terminal** on any terminal page to leave immediately, including
 during a login or download countdown. It closes Commands too, cancels the
 pending local countdown, and asks the server to release your reservation. The
@@ -451,6 +456,13 @@ hidden/deletion-marked panels and stale callbacks after a page is reused. They
 also run the inserted-command paths through the actual client/server handlers.
 The host doubles do not certify native focus transfer, caret placement or layout.
 
+Countdown-submission tests invoke the real login, data and server callbacks
+twice before Think, try returning during a download, and check immediate input
+locking without extra history, sounds or timer replacement. They also verify
+help/quit availability, retired callbacks after quit/reopen, one completion
+request and the server's original minimum deadline. Passing controls exercise
+ordinary completion, early rejection and navigation outside a countdown.
+
 Quit-control tests exercise actual client callbacks and server reservation
 release on every page and during countdowns. They cover help/timer cleanup,
 repeated clicks and retired page/session callbacks, including reopening the
@@ -516,6 +528,10 @@ assets, physics/Use reach, engine networking and multiplayer timing are not
 emulated. Before a live rollout, use a test server to check:
 
 - Spawn/configure one terminal of each type and complete their command flows
+- Rapidly submit login and each download before the first visible countdown
+  update; try recalling/submitting return at download start. Confirm the input
+  locks immediately, the original countdown continues, help and Quit terminal
+  still work, and a completed download produces only one success notice
 - Edit the final setup field and click Done directly; repeat with a new console
   and confirm the new form cannot submit values from the previous one
 - Open setup at 640×480, 800×600, 1024×600, 1280×720, 1366×768 and 1920×1080.

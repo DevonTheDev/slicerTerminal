@@ -661,7 +661,7 @@ return function(gmod, test, equal)
             if countdown.kind then login(env); enterFolder(env, countdown.kind) end
             local entry = activeEntry(env)
             env.command(countdown.start)
-            equal(entry:IsKeyboardInputEnabled(), true, "Race check must precede SetEditable(false)")
+            equal(entry:IsKeyboardInputEnabled(), false, "Countdown must lock input before its first Think")
             helpButton(env, entry.parent):DoClick()
             local help = assert(helpWindows(env)[1], "Reference must remain readable during the countdown")
             local button = findInsertion(help, countdown.command)
