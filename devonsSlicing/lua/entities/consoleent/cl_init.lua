@@ -762,7 +762,16 @@ net.Receive("SlicerSetupEditOpen", function()
     end
 
     local width, height = 460, 430
-    frame:SetTitle("Edit console settings")
+    -- Optional server identity is display-only; legacy/malformed metadata keeps
+    -- the working generic title. Never derive this title from editable names.
+    local identity, title = information.displayIdentity, "Edit console settings"
+    if type(identity) == "table" and type(identity.creationID) == "number"
+        and identity.creationID >= 0 and identity.creationID <= 4294967295 and identity.creationID % 1 == 0
+        and type(identity.entityIndex) == "number" and identity.entityIndex >= 1
+        and identity.entityIndex <= 65535 and identity.entityIndex % 1 == 0 then
+        title = string.format("Edit console #%.0f (entity %.0f)", identity.creationID, identity.entityIndex)
+    end
+    frame:SetTitle(title)
     frame:SetDeleteOnClose(true)
     frame:SetDraggable(false)
     frame:ShowCloseButton(true)

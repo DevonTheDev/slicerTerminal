@@ -408,4 +408,66 @@ return function(gmod, test, equal)
         equal(console.SlicerInformation, information); equal(record(server, console).information, information)
         equal(owner.SlicerPendingConsole, nil)
     end)
+
+    test("edit identity is an isolated current server snapshot in the fourth open item", function()
+        local server, owner, _, console, information = fixture()
+        local written, write = {}, server.net.WriteTable
+        server.net.WriteTable = function(value)
+            written[#written + 1] = value -- Observe before the transport copies tables.
+            return write(value)
+        end
+        local token, prefill = edit(server, owner, console)
+        local identity = assert(prefill.displayIdentity, "Open must include display-only target identity")
+        equal(identity.creationID, console:GetCreationID()); equal(identity.entityIndex, console:EntIndex())
+        local fields = 0; for _ in pairs(information) do fields = fields + 1 end
+        equal(fields, 5); equal(information.displayIdentity, nil)
+        local firstID, firstIndex = identity.creationID, identity.entityIndex
+        written[1].displayIdentity.creationID = 999
+        written[1].displayIdentity.entityIndex = 999
+        written[1].name = "tampered outgoing copy"
+        prefill.displayIdentity.creationID = 888
+        console.id = firstID + 100 -- Display identity cannot become ticket authority.
+        local repeated, nextPrefill = edit(server, owner, console)
+        equal(repeated, token); equal(nextPrefill.name, "terminal")
+        equal(nextPrefill.displayIdentity.creationID, firstID)
+        equal(nextPrefill.displayIdentity.entityIndex, firstIndex)
+        assert(written[1] ~= written[2]); assert(written[1].displayIdentity ~= written[2].displayIdentity)
+        equal(information.name, "terminal"); equal(information.displayIdentity, nil)
+        equal(save(server, owner, console, token).ok, true)
+        equal(console.SlicerInformation.displayIdentity, nil)
+        local _, fresh = edit(server, owner, console)
+        equal(fresh.displayIdentity.creationID, firstID + 100, "New ticket captures current identity")
+    end)
+
+    test("same-name copied consoles retain separate identities even when creation IDs collide", function()
+        local server, owner, _, console = fixture("tools")
+        local copy = duplicate(server, console, owner)
+        copy.id = console.id
+        equal(console.SlicerInformation.name, copy.SlicerInformation.name)
+        local firstToken, first = edit(server, owner, console)
+        local secondToken, second = edit(server, owner, copy)
+        assert(first.displayIdentity and second.displayIdentity, "Both opens need target identities")
+        equal(first.displayIdentity.creationID, second.displayIdentity.creationID)
+        assert(first.displayIdentity.entityIndex ~= second.displayIdentity.entityIndex)
+        assert(firstToken ~= secondToken)
+        equal(first.displayIdentity.entityIndex, console:EntIndex())
+        equal(second.displayIdentity.entityIndex, copy:EntIndex())
+    end)
+
+    test("forged display identity cannot retarget a save or enter saved configuration", function()
+        local server, owner, stranger, first, original = fixture()
+        local second = server.console(owner); server.configure(owner, second)
+        local token, prefill = edit(server, owner, first)
+        local secondToken = edit(server, owner, second)
+        assert(prefill.displayIdentity, "The outgoing identity is informational")
+        local forged = {name = "only first", delay = 4, fileName = "first file",
+            displayIdentity = {creationID = second:GetCreationID(), entityIndex = second:EntIndex()}}
+        obsolete(save(server, stranger, first, token, forged))
+        obsolete(save(server, owner, second, token, forged))
+        equal(first.SlicerInformation, original); equal(second.SlicerInformation.name, "terminal")
+        equal(save(server, owner, first, token, forged).ok, true)
+        equal(first.SlicerInformation.name, "only first"); equal(first.SlicerInformation.displayIdentity, nil)
+        equal(second.SlicerInformation.name, "terminal")
+        equal(save(server, owner, second, secondToken).ok, true, "Other ticket remains live")
+    end)
 end

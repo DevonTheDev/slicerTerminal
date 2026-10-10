@@ -338,4 +338,84 @@ return function(gmod, test, equal)
             end
         end)
     end
+
+    local function identityInfo(identity)
+        return {name = "terminal", delay = 2, fileName = "secret", fileType = "tools", displayIdentity = identity}
+    end
+    for _, sample in ipairs({{0, 1}, {123, 45}, {4294967295, 65535}}) do
+        test("edit title uses bounded server identity " .. sample[1] .. "/" .. sample[2], function()
+            local client, owner, console, previous = fixture()
+            local info = identityInfo({creationID = sample[1], entityIndex = sample[2]})
+            local form = open(client, owner, console, "identity:new", info)
+            equal(form.frame.title, string.format("Edit console #%.0f (entity %.0f)", sample[1], sample[2]))
+            assert(form.frame.title ~= previous.frame.title)
+            info.displayIdentity.creationID = 999; info.displayIdentity.entityIndex = 999
+            info.name = "untrusted title\ntext"
+            form.name:SetText("Draft\nname")
+            equal(form.frame.title, string.format("Edit console #%.0f (entity %.0f)", sample[1], sample[2]), "Captured title must not alias packet or editable text")
+            local messages = packetCount(client)
+            form.save:DoClick()
+            equal(packetCount(client), messages + 1)
+            local fields = client.lastMessage("SlicerSetupEditSave").values[3]
+            equal(fields.displayIdentity, nil)
+            local count = 0; for _ in pairs(fields) do count = count + 1 end; equal(count, 3)
+        end)
+    end
+
+    local invalidIdentities = {
+        {"legacy absent"}, {"boolean", false}, {"text", "#42"}, {"number", 42},
+        {"empty table", {}}, {"missing creation", {entityIndex = 1}}, {"missing index", {creationID = 1}},
+    }
+    for _, field in ipairs({"creationID", "entityIndex"}) do
+        for _, bad in ipairs({{"text", "1"}, {"table", {}}, {"boolean", false},
+            {"negative", -1}, {"fraction", 1.5}, {"NaN", 0/0}, {"infinity", math.huge}, {"negative infinity", -math.huge}}) do
+            local identity = {creationID = 42, entityIndex = 7}; identity[field] = bad[2]
+            invalidIdentities[#invalidIdentities + 1] = {field .. " " .. bad[1], identity}
+        end
+    end
+    invalidIdentities[#invalidIdentities + 1] = {"oversized creation", {creationID = 4294967296, entityIndex = 1}}
+    invalidIdentities[#invalidIdentities + 1] = {"zero index", {creationID = 1, entityIndex = 0}}
+    invalidIdentities[#invalidIdentities + 1] = {"oversized index", {creationID = 1, entityIndex = 65536}}
+    for _, sample in ipairs(invalidIdentities) do
+        test("edit " .. sample[1] .. " display metadata keeps a usable generic title", function()
+            local client, owner, console = fixture()
+            local form = open(client, owner, console, "identity:fallback", identityInfo(sample[2]))
+            equal(form.frame.title, "Edit console settings")
+            form:fill(); form.save:DoClick()
+            equal(client.lastMessage("SlicerSetupEditSave").values[2], "identity:fallback")
+            equal(client.lastMessage("SlicerSetupEditSave").values[3].displayIdentity, nil)
+            reply(client, "identity:fallback", true)
+            equal(form.frame.valid, false, "Optional display failure cannot prevent editing")
+        end)
+    end
+
+    test("identity title and draft survive repeated opens pending rejection and resize", function()
+        local client, owner, console = fixture()
+        local form = open(client, owner, console, "identity:stable", identityInfo({creationID = 42, entityIndex = 7}))
+        local title = "Edit console #42 (entity 7)"
+        equal(form.frame.title, title)
+        form:fill("Renamed draft", "3", "Draft file")
+        local panelCount = #client.panels
+        local function reopen(info)
+            client.receive("SlicerSetupEditOpen", nil, console, owner, "identity:stable", info)
+            equal(#client.panels, panelCount); equal(form.frame.title, title)
+            equal(form.name:GetValue(), "Renamed draft")
+        end
+        reopen(identityInfo({creationID = 99, entityIndex = 11}))
+        form.save:DoClick(); local messages = packetCount(client)
+        reopen({}); form.save:DoClick(); equal(packetCount(client), messages)
+        for _, size in ipairs({{1920, 1080}, {640, 480}, {800, 600}}) do
+            client.ScrW, client.ScrH = function() return size[1] end, function() return size[2] end
+            client.fire("OnScreenSizeChanged", 640, 480)
+            equal(form.frame.title, title); equal(form.name:GetValue(), "Renamed draft")
+            equal(form.save.enabled, false); equal(form.cancel.text, "Close")
+            assert(form.frame.x >= 0 and form.frame.y >= 0
+                and form.frame.x + form.frame.width <= size[1] and form.frame.y + form.frame.height <= size[2])
+        end
+        reply(client, "identity:stable", false, "Correct the delay.")
+        equal(form.frame.title, title); equal(form.save.enabled, true)
+        equal(form.name:GetValue(), "Renamed draft")
+        client.ScrW, client.ScrH = function() return 640 end, function() return 480 end
+        client.fire("OnScreenSizeChanged", 800, 600); equal(form.frame.title, title)
+    end)
 end

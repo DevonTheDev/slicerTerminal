@@ -189,8 +189,14 @@ validation and do not receive a correlated acknowledgement.
 ### Correct a saved console setup
 
 Look at one of your configured, idle consoles and type `!editConsole` in chat.
-The **Edit console settings** form shows its saved name, filename and slice
-delay. Change those values and choose **Save changes**. The folder stays fixed,
+The editor shows its saved name, filename and slice delay. Its title identifies
+the target as **Edit console #123 (entity 45)** using the server's current
+creation ID and entity index, so same-name copies and colliding creation IDs
+remain distinguishable. The title stays fixed for that draft, including while
+renaming, resizing or awaiting a save. These are transient display identifiers,
+not saved IDs or edit authority. Older servers or invalid optional identity
+metadata retain the generic **Edit console settings** title.
+Change the values and choose **Save changes**. The folder stays fixed,
 and an existing door assignment remains attached to the same console. The
 hacking tool is not required to edit your own setup.
 

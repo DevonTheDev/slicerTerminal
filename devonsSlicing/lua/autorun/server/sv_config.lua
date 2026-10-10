@@ -128,14 +128,18 @@ hook.Add("PlayerSay", "slicerEditConsole", function(ply, text)
             return ""
         end
         ticket = {player = ply, console = console, token = token,
-            information = information, snapshot = normalized, record = record, entityName = console:GetName()}
+            information = information, snapshot = normalized, record = record, entityName = console:GetName(),
+            displayIdentity = {creationID = console:GetCreationID(), entityIndex = console:EntIndex()}}
         editTickets[console] = ticket
     end
+    -- Display context is captured per ticket, separate from its five saved fields.
+    local payload = table.Copy(ticket.snapshot)
+    payload.displayIdentity = table.Copy(ticket.displayIdentity)
     net.Start("SlicerSetupEditOpen")
         net.WriteEntity(console)
         net.WriteEntity(ply)
         net.WriteString(ticket.token)
-        net.WriteTable(table.Copy(ticket.snapshot))
+        net.WriteTable(payload)
     net.Send(ply)
     return ""
 end)

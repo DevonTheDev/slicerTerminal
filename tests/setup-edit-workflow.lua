@@ -677,4 +677,60 @@ return function(gmod, test, equal)
             if session.door then equal(session.door.inputs[#session.door.inputs], "Unlock") end
         end)
     end
+
+    test("identified colliding copies keep exact targets through rejection pending close and late reply", function()
+        local session = fixture("tools")
+        local server, client, owner, first = session.server, session.client, session.owner, session.console
+        local data = {SlicerInformation = first.SlicerInformation, SlicerCreator = owner, SlicerDoor = session.door}
+        first:OnEntityCopyTableFinish(data)
+        local second = setmetatable(server.entity("consoleent"), {__index = server.ENT})
+        second:Initialize(); second.SlicerInformation = data.SlicerInformation
+        second:OnDuplicated(data); second:PostEntityPaste(owner, second, {})
+        second.id = first.id
+        local secondDoor = server.entity("func_door")
+        owner.target = second; server.fire("PlayerSay", owner, "!setEntity")
+        owner.target = secondDoor; server.fire("PlayerSay", owner, "!setEntity")
+        local firstForm, secondForm = edit(session), edit(session, second)
+        local firstTitle = string.format("Edit console #%.0f (entity %.0f)", first:GetCreationID(), first:EntIndex())
+        local secondTitle = string.format("Edit console #%.0f (entity %.0f)", second:GetCreationID(), second:EntIndex())
+        equal(firstForm.frame.title, firstTitle); equal(secondForm.frame.title, secondTitle)
+        assert(firstTitle ~= secondTitle)
+        firstForm:fill("first draft", "4", "first file"); secondForm:fill("second draft", "5", "second file")
+        local invalid = submit(session, firstForm); invalid.values[3].delay = 0
+        relay(server, owner, invalid); deliver(client, reply(session, firstForm.token, false))
+        equal(firstForm.frame.title, firstTitle); equal(firstForm.name:GetValue(), "first draft")
+        local panels = #client.panels
+        deliver(client, openPacket(session)); equal(#client.panels, panels)
+        equal(firstForm.frame.title, firstTitle); equal(firstForm.name:GetValue(), "first draft")
+        local pending = submit(session, firstForm)
+        local busy = server.console(owner); server.configure(owner, busy, "data")
+        server.open(session.hacker, busy)
+        local busyInfo, selection = busy.SlicerInformation, owner.SlicerPendingConsole
+        relay(server, owner, pending)
+        local accepted = reply(session, firstForm.token, true)
+        equal(firstForm.frame.title, firstTitle); equal(firstForm.cancel.text, "Close")
+        client.deferPanelRemoval = true
+        firstForm.cancel:DoClick(); relay(server, owner, client.lastMessage("SlicerSetupEditCancel"))
+        first.id = first.id + 100
+        local fresh = edit(session)
+        local freshTitle = string.format("Edit console #%.0f (entity %.0f)", first:GetCreationID(), first:EntIndex())
+        equal(fresh.frame.title, freshTitle); fresh:fill("replacement draft", "6", "replacement file")
+        local messages = #client.messages
+        deliver(client, accepted); firstForm.save:DoClick(); firstForm.cancel:DoClick()
+        firstForm.frame:OnClose(); firstForm.frame:OnRemove()
+        equal(#client.messages, messages); equal(live(fresh.frame), true); equal(live(secondForm.frame), true)
+        equal(fresh.frame.title, freshTitle); equal(fresh.name:GetValue(), "replacement draft")
+        equal(secondForm.frame.title, secondTitle); equal(secondForm.name:GetValue(), "second draft")
+        assertInfo(first, "first draft", 4, "first file", "tools")
+        assertInfo(second, "terminal", 2, "secret", "tools")
+        equal(first.SlicerDoor, session.door); equal(second.SlicerDoor, secondDoor)
+        equal(#session.door.inputs, 1); equal(#secondDoor.inputs, 1)
+        equal(busy.SlicerInformation, busyInfo); equal(busyInfo.inUse, true)
+        equal(owner.SlicerPendingConsole, selection)
+        save(session, secondForm)
+        assertInfo(second, "second draft", 5, "second file", "tools")
+        equal(live(fresh.frame), true); equal(fresh.frame.title, freshTitle)
+        server.now = 4; server.receive("destroyOnServer", session.hacker, busy)
+        equal(busy.removed, true, "Other active session retains its original completion deadline")
+    end)
 end
