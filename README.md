@@ -385,6 +385,21 @@ terminal remains available for another attempt, and a linked door stays locked.
 Starting again begins a fresh login; there is no saved partial progress. Quitting
 cannot undo a completion request that was already sent.
 
+### Recover a missing terminal screen
+
+If your terminal screen disappears but the console or hacking tool is still
+busy, enter exactly `!quitConsole` in chat. This private command releases only
+your own current hacking session and closes its remaining terminal UI and
+countdowns. You must be alive; you do not need the hacking tool equipped or a
+target under your crosshair. It accepts no arguments.
+
+The terminal and its saved setup survive, and a linked door stays locked.
+Another player can use the terminal, and your next attempt starts with a fresh
+login and deadline. Your separate setup/edit drafts, pending door selection and
+console locator stay intact. If you have no active hacking session, the command
+only prints a private notice, so repeating it does not close unrelated UI.
+Like the Quit button, it cannot undo a completion the server already accepted.
+
 ### Command assistance
 
 Click **Commands (/help)** or enter `/help` to open a scrollable reference for
@@ -491,6 +506,14 @@ same terminal. These client guards prevent stale local controls from quitting a
 later session; they do not add session tokens or network replay protection to
 the existing quit protocol. Native button input and rendering still need the
 smoke checks below.
+
+Session-recovery tests cover lost pages for all three file types, chat cleanup
+before/after the first countdown update, retained callbacks after reopening,
+and fresh minimum deadlines. They verify exact private command handling,
+living-player checks, idle/repeated requests without cleanup packets, no tool
+or target requirement, and preserved setup/edit/listing/marker/link state and
+other players' original sessions. These are host callback tests; native chat
+accessibility and compatibility with chat addons remain unverified.
 
 Reselection tests relay actual client setup packets into the server callbacks
 and exercise `!setEntity`, Use and completion. They cover same-creator terminals
@@ -607,6 +630,13 @@ emulated. Before a live rollout, use a test server to check:
   and from all three folders, with Commands both open and closed. Confirm the
   button remains reachable, no success appears, the linked door stays locked,
   and reopening starts a fresh login
+- Lose or hide a terminal page without clicking Quit, then enter exactly
+  `!quitConsole` in chat. Check private delivery with the server's chat addons,
+  cleanup during each countdown, retry with a fresh delay, and recovery without
+  an equipped tool or crosshair target. Repeat while another player is hacking
+  and while your setup/edit drafts and locator are open; verify they stay intact
+  and both linked brush-door classes remain locked. Try idle/repeated requests,
+  near-match text and a dead player; confirm no unrelated cleanup or release
 - Strip or switch away from the hacking tool during each completion flow;
   confirm no success is printed, the terminal remains available and another
   player can use it. Re-equip and retry normally

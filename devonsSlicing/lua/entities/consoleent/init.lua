@@ -149,7 +149,9 @@ function ENT:AcceptInput(name, activator, caller)
         return
     end
     if information.inUse or sessions[activator] then
-        activator:ChatPrint("This console or your hacking tool is already in use.")
+        local message = "This console or your hacking tool is already in use."
+        if sessions[activator] then message = message .. " Type !quitConsole to leave your current session." end
+        activator:ChatPrint(message)
         return
     end
 
@@ -189,6 +191,19 @@ end)
 net.Receive("playerQuitConsole", function(_, ply)
     -- Never trust the player/entity IDs in the legacy payload.
     releaseSession(ply, false)
+end)
+
+-- A lost terminal page must not strand its player's server reservation.
+hook.Add("PlayerSay", "slicerQuitConsole", function(ply, text)
+    if text ~= "!quitConsole" then return end
+    if not IsValid(ply) or not ply:IsPlayer() or not ply:Alive() then return "" end
+    if sessions[ply] then
+        releaseSession(ply, true)
+        ply:ChatPrint("You left your hacking session. Use the console again to start a fresh attempt.")
+    else
+        ply:ChatPrint("You are not in a hacking session.")
+    end
+    return ""
 end)
 
 -- Configuration records the pending console on the authenticated creator.
