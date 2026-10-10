@@ -161,7 +161,7 @@ return function(gmod, test, equal)
             console.SlicerInformation.inUse = busy
             local message = inspect(env, owner, console)
             identity(message, console)
-            contains(message, "never been linked")
+            contains(message, "has no door link")
             lacks(message, "!setEntity")
         end)
     end
@@ -172,7 +172,7 @@ return function(gmod, test, equal)
         door:Remove()
         local message = inspect(env, owner, console)
         contains(message, "previous door is no longer available")
-        lacks(message, "never been linked"); lacks(message, "!setEntity")
+        lacks(message, "has no door link"); lacks(message, "!setEntity")
         equal(console.SlicerDoor, door)
     end)
 
@@ -316,7 +316,7 @@ return function(gmod, test, equal)
             else console.SlicerInformation = invalid.value end
             local message = inspect(env, owner, console)
             contains(message, "invalid configuration")
-            lacks(message, "never been linked"); lacks(message, "registered link to")
+            lacks(message, "has no door link"); lacks(message, "registered link to")
         end)
     end
 
@@ -339,6 +339,6 @@ return function(gmod, test, equal)
         local message = inspect(env, owner, console)
         lacks(message, "\194\133"); lacks(message, "\226\128\168"); lacks(message, "\226\128\169")
         equal(console.SlicerInformation.name, original)
-        contains(message, "never been linked")
+        contains(message, "has no door link")
     end)
 end

@@ -10,7 +10,7 @@ local consoleListings = {}
 local listingLifetime = 60
 
 -- Configuration flags can be changed by legacy callers independently of a
--- reservation. Editing must also consult the actual server-owned sessions.
+-- reservation. Editing and link recovery also consult server-owned sessions.
 function slicerConsoleHasActiveSession(console)
     for _, session in pairs(sessions) do
         if session.console == console then return true end
@@ -48,13 +48,13 @@ end
 local function canLinkConsole(ply, console)
     if not IsValid(console) or console:GetClass() ~= "consoleent" or console.SlicerCreator ~= ply then return false end
     local information = console.SlicerInformation
-    -- A removed door still counts as a previous assignment. This is selection
-    -- of a never-linked console, not permission to redirect an existing hack.
+    -- A removed door still counts as a previous assignment until its creator
+    -- explicitly clears it with !resetLink. Selection cannot redirect a hack.
     return information and information.fileType == "tools"
         and console.SlicerDoor == nil and not information.inUse
 end
 
-local selectionInstruction = "Look at one of your configured, never-linked tools consoles and type !setEntity to select it."
+local selectionInstruction = "Look at one of your configured, unlinked tools consoles and type !setEntity to select it."
 local supportedDoors = {func_door = true, func_door_rotating = true}
 local doorClassNames = "func_door or func_door_rotating"
 
@@ -247,6 +247,33 @@ local function inspectionLabel(console)
     return label .. " (current ID #" .. console:GetCreationID() .. "): "
 end
 
+hook.Add("PlayerSay", "slicerResetLink", function(ply, text)
+    if text ~= "!resetLink" then return end
+    if not IsValid(ply) or not ply:IsPlayer() or not ply:Alive() then return "" end
+    local console = ply:GetEyeTrace().Entity
+    local information = IsValid(console) and console:GetClass() == "consoleent" and console.SlicerCreator == ply
+        and normalizeSlicerInformation(console.SlicerInformation)
+    -- Validate a separate copy without replacing saved fields, records or edit
+    -- tickets. The raw busy flag and actual reservation independently veto reset.
+    if not information or information.fileType ~= "tools" or console.SlicerInformation.inUse
+        or slicerConsoleHasActiveSession(console) then
+        ply:ChatPrint("Look at one of your configured, idle tools consoles with a removed door and type !resetLink.")
+        return ""
+    end
+    local door, message = console.SlicerDoor
+    if door == nil then
+        message = "has no link to reset. Use !setEntity to select it."
+    elseif IsValid(door) then
+        message = "still has an available door; its link was not changed."
+    else
+        console.SlicerDoor = nil
+        if linkedDoors[door] == console then linkedDoors[door] = nil end
+        message = "old link cleared. Use !setEntity on this console, then on a replacement door."
+    end
+    ply:ChatPrint(inspectionLabel(console) .. message)
+    return ""
+end)
+
 local function inspectConsoleLink(console, information)
     local label = inspectionLabel(console)
     if console.SlicerInformation == nil then return label .. "needs setup. Use it to configure it." end
@@ -255,8 +282,10 @@ local function inspectConsoleLink(console, information)
         return label .. "configured for " .. information.fileType .. "; door linking is for tools consoles."
     end
     local door = console.SlicerDoor
-    if door == nil then return label .. "has never been linked to a door." end
-    if not IsValid(door) then return label .. "previous door is no longer available." end
+    if door == nil then return label .. "has no door link." end
+    if not IsValid(door) then
+        return label .. "previous door is no longer available. When idle, use !resetLink on this console."
+    end
     if not supportedDoors[door:GetClass()] or linkedDoors[door] ~= console then
         return label .. "no registered link can be confirmed in this server session."
     end

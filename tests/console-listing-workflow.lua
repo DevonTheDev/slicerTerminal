@@ -267,7 +267,7 @@ return function(gmod, test, equal)
         local rows, text = listing(server, owner)
         equal(#rows, 5); contains(text, "!listConsoles 2")
         for i = 1, 5 do rowFor({rows[i]}, consoles[i]) end
-        absent(rows, other); registered(rows, source, door); contains(rowFor(rows, copy), "never")
+        absent(rows, other); registered(rows, source, door); contains(rowFor(rows, copy), "has no door link")
         local last = listing(server, owner, 2); equal(#last, 2)
         rowFor({last[1]}, sixth); rowFor({last[2]}, selected); absent(last, other)
         equal(owner.SlicerPendingConsole, selected); equal(source.SlicerInformation.inUse, true)
@@ -350,7 +350,7 @@ return function(gmod, test, equal)
             for _, now in ipairs({40.5, 41, 41.999, 42}) do
                 server.now = now
                 local rows = listing(server, owner)
-                registered(rows, console, door); registered(rows, other, otherDoor); contains(rowFor(rows, copy), "never")
+                registered(rows, console, door); registered(rows, other, otherDoor); contains(rowFor(rows, copy), "has no door link")
             end
             local request = completion(hackClient, console); relay(server, owner, request)
             equal(console.removed, true, "Repeated listing cannot postpone the original exact deadline")
@@ -362,7 +362,7 @@ return function(gmod, test, equal)
             local count = #server.messages; relay(server, owner, request)
             equal(#server.messages, count, "Repeated completion remains ignored")
             local rows = listing(server, owner); equal(#rows, 2); absent(rows, console)
-            contains(rowFor(rows, copy), "never"); registered(rows, other, otherDoor)
+            contains(rowFor(rows, copy), "has no door link"); registered(rows, other, otherDoor)
         end)
     end
 
@@ -377,9 +377,9 @@ return function(gmod, test, equal)
                 local copy = paste(server, source, copier)
                 local rows = listing(server, owner)
                 registered(rows, source, door); equal(#rows, sameOwner and 2 or 1)
-                if sameOwner then contains(rowFor(rows, copy), "never") else absent(rows, copy) end
+                if sameOwner then contains(rowFor(rows, copy), "has no door link") else absent(rows, copy) end
                 rows = listing(server, copier)
-                contains(rowFor(rows, copy), "shared name"); contains(rowFor(rows, copy), "never")
+                contains(rowFor(rows, copy), "shared name"); contains(rowFor(rows, copy), "has no door link")
                 if not sameOwner then equal(#rows, 1); absent(rows, source) end
                 if sourceFirst then
                     source:Remove(); same(door.inputs, {"Lock", "Unlock"}, "Source cleanup inputs")

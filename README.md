@@ -24,8 +24,9 @@ and terminal-driven downloads or door unlocking.
    and type `!setEntity`; the confirmation names your selection. Then look at
    its intended door and type `!setEntity` again. This also recovers an older
    terminal after you set up or remove a newer one. Selection requires a
-   terminal that has **never been linked** and is not in use. A prior link
-   remains ineligible even if its door was removed. Invalid choices preserve
+   terminal that is **unlinked** and not in use. A prior link remains ineligible
+   after its door is removed until you explicitly clear it with `!resetLink`.
+   Invalid choices preserve
    your pending selection so you can retry. Each terminal has its own door;
    a door cannot be attached to two live terminals. Using an unlinked terminal
    only gives guidance and does not select it.
@@ -48,6 +49,22 @@ and Facepunch's [map-input API](https://wiki.facepunch.com/gmod/Entity:Fire).
 needs native paired-door checks. Actual GMod lock/use behavior, map outputs and
 protection-addon compatibility still require the smoke checks below.
 
+### Recover after a linked door is removed
+
+Look at your configured tools console and type `!resetLink` in chat. If its
+previous door is no longer valid, the private reply confirms that the old link
+was cleared. Then look at that console and type `!setEntity` to select it;
+look at a replacement `func_door` or `func_door_rotating` and type `!setEntity`
+again to link and lock that door through the normal workflow.
+
+Only the living creator can reset an idle console. A busy flag or an actual
+hacking session blocks recovery, and a live door link cannot be reset. A fresh
+unlinked console just receives selection guidance. Reset keeps the saved
+configuration, open setup/edit forms and pending selections intact, so you
+must explicitly select the recovered console before choosing its new door.
+It clears only the unavailable door association and its matching registration;
+it does not unlock doors or change other consoles' links or sessions.
+
 ### Inspect an existing door link
 
 Look at one of your consoles or its registered brush door and type
@@ -58,12 +75,13 @@ several consoles or copies with the same name. Only the console's creator can
 inspect it; the hacking tool is not required, and inspection remains available
 during a hack.
 
-The reply distinguishes a never-linked tools console, an unavailable former
+The reply distinguishes an unlinked tools console, an unavailable former
 door and a relationship that is no longer registered in the current server
 session. Unconfigured consoles get setup guidance; data/server consoles report
 their configured folder. Inspection leaves pending selections,
 saved configuration, edit forms and hacking deadlines intact. Door selection
-still follows the existing `!setEntity` workflow and its never-linked rule.
+still follows the existing `!setEntity` workflow. An unavailable former door
+includes `!resetLink` guidance; recovery must be requested separately while idle.
 
 Replies fit the [native chat byte limit](https://wiki.facepunch.com/gmod/Player:ChatPrint),
 with display-only control-character cleanup. Saved names are unchanged.
@@ -390,8 +408,8 @@ texlua tests/run.lua
 The suite needs no downloaded dependencies. It runs the actual addon code with
 small Garry's Mod API doubles. Its loader translates GLua `!`, `!=`, and `//`
 comments for stock Lua without modifying command strings. The harness supports
-Lua 5.1 and newer. This change was checked with Lua 5.1, LuaJIT 2.1 and Lua 5.3
-through the installed Lupa runtimes.
+Lua 5.1 and newer. Earlier changes were checked with Lua 5.1, LuaJIT 2.1 and
+Lua 5.3 through the installed Lupa runtimes.
 
 Coverage includes malicious/malformed network requests, concurrent users,
 creator-only setup, stale/deleted entities, independent door links, session
@@ -442,6 +460,14 @@ then check linking, reservations, minimum delay, completion and cleanup against
 both supported classes. They also cover mixed links, refused prop/arbitrary
 targets, pending-selection recovery and copy isolation. Engine I/O is recorded
 by doubles; the tests do not emulate a moving door.
+
+Link-recovery tests exercise exact creator chat commands, removed sliding and
+rotating doors, unchanged configuration/selection/edit records, and independent
+busy-flag and active-session guards. They relay real setup, editing, relinking,
+Use and tool completion, including early requests, late former senders, copies
+and removal cleanup. Exact state snapshots check that only the obsolete binding
+and its owned registry entry change. Native eye traces, chat delivery and brush
+door behavior still need the smoke checks below.
 
 Deferred-setup tests follow spawn, local dismissal, creator Use, configuration and
 the existing hack/door flows. They check duplicate-form focus, independent
@@ -529,6 +555,13 @@ emulated. Before a live rollout, use a test server to check:
 - Try another creator's terminal, a linked terminal (including one whose door
   was removed), a non-tools terminal and an already-claimed door; confirm no
   selection or door changes, then retry with an eligible terminal and door
+- Remove a linked sliding or rotating door and use `!inspectLink` or
+  `!listConsoles` to find the recovery guidance. As its living creator, use
+  `!resetLink` on the idle console, explicitly select it with `!setEntity`,
+  link a replacement of either brush class, and complete the normal tools flow.
+  Check private replies, retained setup/edit drafts and other pending choices.
+  Try reset during a hack, on a live door link, as another player and on an
+  unconfigured/data/server console; verify no link changes or door unlocks
 - At 640×480 and a normal desktop resolution, log in and inspect all three
   folders. Confirm their artwork/captions and all file rows are visible above
   Commands/Quit/input; return, reopen help and complete each terminal type

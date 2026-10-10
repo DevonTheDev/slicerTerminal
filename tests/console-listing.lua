@@ -278,7 +278,7 @@ return function(gmod, test, equal)
         {label = "unconfigured", state = "needs setup", setup = function(env, owner) return env.console(owner) end},
         {label = "data", state = "configured for data", kind = "data"},
         {label = "server", state = "configured for server", kind = "server"},
-        {label = "never linked busy", state = "has never been linked", alter = function(env, owner, console) console.SlicerInformation.inUse = true end},
+        {label = "never linked busy", state = "has no door link", alter = function(env, owner, console) console.SlicerInformation.inUse = true end},
         {label = "removed door", state = "previous door is no longer available", alter = function(env, owner, console) link(env, owner, console):Remove() end},
         {label = "unregistered brush door", state = "no registered link can be confirmed", alter = function(env, owner, console) console.SlicerDoor = env.entity("func_door") end},
         {label = "unsupported door", state = "no registered link can be confirmed", alter = function(env, owner, console) console.SlicerDoor = env.entity("prop_door_rotating") end},
