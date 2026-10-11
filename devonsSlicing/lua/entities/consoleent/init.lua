@@ -225,7 +225,32 @@ hook.Add("PlayerSay", "slicerCancelLink", function(ply, text)
     return ""
 end)
 
+local function selectConsole(ply, console)
+    -- Commit before feedback can reenter selection, cancel or remove a console.
+    ply.SlicerPendingConsole = console
+    ply:ChatPrint("Selected '" .. console.SlicerInformation.name .. "'. Look at a " .. doorClassNames .. " and use !setEntity to link, or !cancelLink to cancel.")
+    return ""
+end
+
 hook.Add("PlayerSay", "doesThePlayerSetAnEntity", function(ply, text)
+    local row = #text == 12 and text:match("^!setEntity ([1-5])$")
+    if row then
+        if not IsValid(ply) or not ply:IsPlayer() or not ply:Alive() then return "" end
+        -- Resolve the current listing closure without refreshing its lease or
+        -- consulting eye trace. IDs and current list order are not authority.
+        local console = type(slicerListedConsole) == "function" and slicerListedConsole(ply, tonumber(row))
+        if not console then
+            ply:ChatPrint("That console row is unavailable or expired. Use !listConsoles or !findConsoles again, then !setEntity <row>.")
+            return ""
+        end
+        local information = normalizeSlicerInformation(console.SlicerInformation)
+        if not information or information.fileType ~= "tools" or not canLinkConsole(ply, console)
+            or slicerConsoleHasActiveSession(console) then
+            ply:ChatPrint("That listed console cannot be selected. " .. selectionInstruction .. " It must not be in use.")
+            return ""
+        end
+        return selectConsole(ply, console)
+    end
     if text ~= "!setEntity" then return end
     local target = ply:GetEyeTrace().Entity
     if IsValid(target) and target:GetClass() == "consoleent" then
@@ -233,9 +258,7 @@ hook.Add("PlayerSay", "doesThePlayerSetAnEntity", function(ply, text)
             ply:ChatPrint("That console cannot be selected. " .. selectionInstruction .. " It must not be in use.")
             return
         end
-        ply.SlicerPendingConsole = target
-        ply:ChatPrint("Selected '" .. target.SlicerInformation.name .. "'. Look at a " .. doorClassNames .. " and use !setEntity to link, or !cancelLink to cancel.")
-        return ""
+        return selectConsole(ply, target)
     end
 
     local console = ply.SlicerPendingConsole

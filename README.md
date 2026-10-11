@@ -38,6 +38,29 @@ and terminal-driven downloads or door unlocking.
    callable `ShouldDropOnDie` hook returns false, overriding the base weapon
    policy without replacing the method with a boolean.
 
+### Select a listed console for a door
+
+After `!listConsoles` or `!findConsoles`, type exactly `!setEntity 1` through
+`!setEntity 5` to select that row of your most recent page, including filtered
+pages. You can stay near the intended door: check the named confirmation, then
+look at a `func_door` or `func_door_rotating` and type bare `!setEntity` to link it.
+The row command needs a living creator and a currently configured, idle tools
+console with no door pointer or active hacking reservation. A removed former
+door still needs explicit `!resetLink` first. No hacking tool or eye target is
+required to select a row. Near matches, extra spaces and trailing text remain
+ordinary chat; the existing look-at-console command still works.
+
+Rows refer to the exact entities printed for 60 seconds, not creation IDs.
+Selection does not refresh that deadline. A new list/search replaces the page,
+and invalid or empty requests clear it. Unavailable rows give private relisting
+guidance; ineligible consoles must become eligible before selection. Either
+refusal preserves your previous pending choice. Renaming or changing a filter
+state does not replace a row's entity, but current selection checks still apply.
+Once accepted, your pending choice survives later list expiry or replacement.
+Final linking keeps its existing checks and retry behavior; `!cancelLink` clears
+the choice. Selection leaves saved settings, setup/edit forms, locator markers,
+existing links and other hacking sessions unchanged.
+
 ### Cancel a pending door selection
 
 Type exactly `!cancelLink` in chat to clear your own pending door-link selection.
