@@ -11,6 +11,11 @@ return function(gmod, test, equal)
         ent.SlicerInformation.name = name or "target"
         if state == "unconfirmed" then ent.SlicerDoor = env.entity("func_door") end
         if state == "linked" then link(env, owner, ent, "func_door") end
+        if state == "reserved" then
+            if ent.SlicerInformation.fileType == "tools" then link(env, owner, ent, "func_door") end
+            env.open(env.player(), ent)
+            assert(env.slicerConsoleHasActiveSession(ent))
+        end
         return ent
     end
     local function say(env, owner, text) return env.fire("PlayerSay", owner, text) end
@@ -115,9 +120,11 @@ return function(gmod, test, equal)
         suffixes[#suffixes + 1] = " 1 unconfirmed a\226\128\169b"
         -- Reuse the shared grammar matrix for the newly accepted state.
         local existing = #suffixes
-        for i = 1, existing do
-            local linked = suffixes[i]:gsub("unlinked", "linked"):gsub("unconfirmed", "linked"):gsub("UNLINKED", "LINKED")
-            if linked ~= suffixes[i] then suffixes[#suffixes + 1] = linked end
+        for _, state in ipairs({"linked", "reserved"}) do
+            for i = 1, existing do
+                local variant = suffixes[i]:gsub("unlinked", state):gsub("unconfirmed", state):gsub("UNLINKED", state:upper())
+                if variant ~= suffixes[i] then suffixes[#suffixes + 1] = variant end
+            end
         end
         for _, suffix in ipairs(suffixes) do
             local rows, messages = request(env, owner, "!listConsoles" .. suffix)
@@ -167,7 +174,7 @@ return function(gmod, test, equal)
         end)
     end
 
-    for _, state in ipairs({"unlinked", "unconfirmed", "linked"}) do
+    for _, state in ipairs({"unlinked", "unconfirmed", "linked", "reserved"}) do
         for _, count in ipairs({0, 1, 5, 6, 12}) do
             test(state .. " name search privately paginates " .. count .. " intersections with exact hints", function()
                 local env = support.server(); local owner, other = env.player(), env.player()
@@ -203,7 +210,7 @@ return function(gmod, test, equal)
         end
     end
 
-    for _, state in ipairs({"unconfirmed", "linked"}) do
+    for _, state in ipairs({"unconfirmed", "linked", "reserved"}) do
         test(state .. " combined 128-byte ASCII and multibyte queries accept the command boundary", function()
             local env = support.server(); local owner = env.player()
             for _, name in ipairs({string.rep("a", 128), string.rep("é", 64)}) do
@@ -214,7 +221,7 @@ return function(gmod, test, equal)
                 equal(messages[#messages], "Next page: !listConsoles 2 " .. state .. " " .. name)
                 locate(env, owner, first)
                 local command = "!listConsoles 9999999 " .. state .. " " .. name
-                equal(#command, state == "unconfirmed" and 162 or 157) -- Longest state fills the ceiling.
+                equal(#command, 151 + #state) -- Longest state still fills the unchanged 162-byte ceiling.
                 rows, messages = request(env, owner, command)
                 equal(#rows, 0); contains(messages[1], "between 1 and 2")
             end
@@ -277,8 +284,107 @@ return function(gmod, test, equal)
         for _, ent in ipairs({a, b, c}) do link(env, owner, ent, "func_door_rotating") end
         equal(#search(env, owner, "linked", "TARGET"), 3)
         locate(env, owner, b); locate(env, owner, c, 2); locate(env, owner, a, 3)
+        for _, ent in ipairs({a, b, c}) do env.open(env.player(), ent) end
+        equal(#search(env, owner, "reserved", "TARGET"), 3)
+        locate(env, owner, b); locate(env, owner, c, 2); locate(env, owner, a, 3)
         for index, ent in ipairs({a, foreign, c, removed, ownerless, wrong, b}) do equal(all[index], ent) end
     end)
+
+    test("reserved tails preserve literal punctuation ASCII folding Unicode and malformed saved names", function()
+        local env = support.server(); local owner = env.player()
+        for _, name in ipairs({'2 reserved [a].%  "Q"\\', "É", "é", "é", "Straße"}) do
+            local ent = named(env, owner, name, "reserved", "data")
+            equal(#search(env, owner, "reserved", name), 1); locate(env, owner, ent)
+        end
+        equal(#search(env, owner, "reserved", '2 RESERVED [a].%  "q"\\'), 1)
+        equal(#search(env, owner, "reserved", ".*"), 0)
+        equal(#search(env, owner, "reserved", "STRASSE"), 0)
+        equal(#search(env, owner, "reserved", "secret"), 0)
+        local ent = named(env, owner, "broken settings", "reserved", "server")
+        ent.SlicerInformation.delay = {}
+        equal(#search(env, owner, "reserved", "broken settings"), 1); locate(env, owner, ent)
+        equal(#search(env, owner, "linked", "broken settings"), 0)
+    end)
+
+    for _, query in ipairs({"", " TARGET [a].%"}) do
+        test("reserved exact row survives release and a same-ID reservation until original expiry" .. query, function()
+            local env = support.server(); local owner, hacker = env.player(), env.player()
+            local ent = named(env, owner, "target [a].%", nil, "data")
+            env.open(hacker, ent)
+            env.now = 7; equal(#request(env, owner, "!listConsoles 1 reserved" .. query), 1)
+            env.now = 20; say(env, hacker, "!quitConsole")
+            equal(env.slicerConsoleHasActiveSession(ent), false)
+            local replacement = named(env, owner, "target [a].%", "reserved", "data"); replacement.id = ent.id
+            ent.SlicerInformation.name = "renamed"
+            function env.ents.FindByClass() error("Locate reran reserved filter") end
+            env.now = 66.999; contains(locate(env, owner, ent).values[2], "renamed")
+            env.now = 67; locate(env, owner)
+        end)
+    end
+
+    for _, invalidation in ipairs({"removed", "owner", "class", "expiry", "death", "disconnect", "invalid", "empty", "range"}) do
+        test("reserved combined lease rejects stale exact rows after " .. invalidation, function()
+            local env = support.server(); local owner, other = env.player(), env.player()
+            local ent = named(env, owner, "target", "reserved", "data")
+            local foreign = named(env, other, "target", "reserved", "data")
+            search(env, other, "reserved", "target")
+            equal(#search(env, owner, "reserved", "target"), 1); locate(env, owner, ent)
+            if invalidation == "removed" then
+                ent:Remove(); local replacement = named(env, owner, "target", "reserved", "data"); replacement.id = ent.id
+            elseif invalidation == "owner" then ent.SlicerCreator = other
+            elseif invalidation == "class" then ent.class = "prop_physics"
+            elseif invalidation == "expiry" then env.now = 60
+            elseif invalidation == "death" then env.fire("PlayerDeath", owner)
+            elseif invalidation == "disconnect" then env.fire("PlayerDisconnected", owner)
+            elseif invalidation == "invalid" then request(env, owner, "!listConsoles 01 reserved target")
+            elseif invalidation == "empty" then search(env, owner, "reserved", "missing")
+            else search(env, owner, "reserved", "target", 2) end
+            locate(env, owner)
+            if invalidation ~= "expiry" then locate(env, other, foreign) end
+        end)
+    end
+
+    test("reserved pages reevaluate actual reservations names and ownership before counts", function()
+        local env = support.server(); local owner = env.player(); local entries, hackers = {}, {}
+        for index = 1, 6 do
+            entries[index] = named(env, owner, "target", nil, "data")
+            hackers[index] = env.player(); env.open(hackers[index], entries[index])
+        end
+        equal(#search(env, owner, "reserved", "TARGET"), 5)
+        say(env, hackers[1], "!quitConsole"); entries[2].SlicerInformation.name = "renamed"
+        entries[3].SlicerCreator = env.player(); entries[4]:Remove()
+        local added = named(env, owner, "target", "reserved", "server")
+        local rows, messages = search(env, owner, "reserved", "target", 2)
+        equal(#rows, 0); contains(messages[1], "between 1 and 1"); locate(env, owner)
+        equal(#search(env, owner, "reserved", "target"), 3)
+        locate(env, owner, entries[5]); locate(env, owner, entries[6], 2); locate(env, owner, added, 3)
+    end)
+
+    for _, newer in ipairs({"!listConsoles", "!findConsoles 1 renamed", "!listConsoles 1 reserved",
+        "!listConsoles 1 reserved renamed", "!listConsoles 1 reserved missing", "!listConsoles 01 reserved"}) do
+        test("reserved prepared output leaves newer request authoritative: " .. newer, function()
+            local env = support.server(); local owner = env.player()
+            local first = named(env, owner, "target one", "reserved", "data")
+            local second = named(env, owner, "target two", "reserved", "data")
+            local original, fired = owner.ChatPrint, false
+            function owner:ChatPrint(text)
+                original(self, text)
+                if not fired then
+                    fired = true; first:Remove(); second.SlicerInformation.name = "renamed"
+                    function first:GetCreationID() error("Removed reserved row reread") end
+                    equal(say(env, owner, newer), "")
+                end
+            end
+            -- Removal legitimately closes the first hacker's UI from this callback.
+            equal(say(env, owner, "!listConsoles 1 reserved target"), "")
+            owner.ChatPrint = original
+            local rendered = table.concat(owner.chats, "\n")
+            contains(rendered, "'target one'"); contains(rendered, "'target two'")
+            if newer:find("missing", 1, true) or newer:find("01", 1, true) then locate(env, owner)
+            else locate(env, owner, second) end
+            locate(env, owner, nil, 2)
+        end)
+    end
 
     test("each combined page uses fresh names states ownership and entities", function()
         local env = support.server(); local owner = env.player(); local entries = {}

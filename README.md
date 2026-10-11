@@ -154,19 +154,31 @@ To show one current state, use `!listConsoles <page> <state>`, for example
   is unavailable, class is unsupported, or registered association does not match
 - `linked`: valid tools configuration with a live supported door registered to
   that exact console in this server session; this does not report its physical lock state
+- `reserved`: a current server-owned hacking reservation for that exact console,
+  including data, server and tools terminals being hacked by another player
 
 These are inventory categories, not a diagnosis or automatic repair. The existing
 row descriptions still distinguish an unavailable former door from an unconfirmed
-registration. Valid data/server consoles do not enter any of these categories,
-even with a legacy door pointer. Malformed nonnil configuration stays visible in
-the full inventory but does not count as setup or inferred tools configuration.
+registration. Data/server consoles can match `reserved`, but do not enter the
+setup or tools-link categories, even with a legacy door pointer. Malformed nonnil
+configuration stays visible in the full inventory and can still be reserved;
+it does not count as setup or inferred tools configuration.
 Use one ASCII space before the page and before the state; the page is required
 when filtering. Totals and pages count only matching consoles, and next/first-page
 hints retain the state. Each request evaluates current entities afresh.
 `!listConsoles` and `!listConsoles <page>` keep showing the full inventory.
 
+`reserved` reports the existing server session, independently of the legacy
+`inUse` flag. A flag alone does not match, and clearing it does not hide a
+reservation. Only the console's creator can list it; the hacker's identity is
+never shown. Listing does not clean up sessions, restart deadlines, change
+selections or retire setup/edit forms. A reservation whose player is invalid or
+dead remains visible until the existing lifecycle cleanup runs. The session's
+completion time is a minimum wait, not an expiry: quit, death/disconnect hooks,
+console removal and completion keep their existing cleanup behavior.
+
 To narrow a state by saved name, use
-`!listConsoles <page> <unlinked|unconfirmed|linked> <text>`, for example
+`!listConsoles <page> <unlinked|unconfirmed|linked|reserved> <text>`, for example
 `!listConsoles 1 linked reactor west`. Results must match both the current
 state and the literal name fragment. Use exactly one ASCII space before the
 page, state and first text byte; the remaining text follows the same 1–128-byte
@@ -179,8 +191,13 @@ Combined headers and counts describe only the intersected matches. No matches
 points to that state's full list; out-of-range pages retain the combined syntax.
 Next/first-page commands retain both the state and exact text, with no added
 punctuation. Copy the complete hint to repeat the search. Named but malformed
-configuration can still match `!findConsoles`, but cannot enter any combined
-tools state. Plain `!findConsoles` never treats any part of its text as a state:
+configuration can still match `!findConsoles` or a reserved name search when it
+has a reservation, but cannot enter any combined tools-link state.
+For example, `!listConsoles 1 reserved reactor west` finds reservations whose
+saved names contain that literal fragment. Locating a listed row keeps pointing
+to the same console if its reservation ends, until the original 60-second lease
+expires or the console becomes unavailable. Plain `!findConsoles` never treats
+any part of its text as a state:
 `!findConsoles 1 unlinked reactor` searches for the literal `unlinked reactor`.
 
 The list sorts by current creation ID, then entity index when IDs collide.

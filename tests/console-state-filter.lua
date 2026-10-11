@@ -1,7 +1,7 @@
 -- Exercise actual PlayerSay callbacks and exact-reference location packets.
 return function(gmod, test, equal)
     local support = dofile("tests/console-locator-support.lua")(gmod)
-    local states = {"setup", "unlinked", "unconfirmed", "linked"}
+    local states = {"setup", "unlinked", "unconfirmed", "linked", "reserved"}
     local function contains(text, part)
         assert(text:find(part, 1, true), "Missing '" .. part .. "' in " .. text)
     end
@@ -20,6 +20,12 @@ return function(gmod, test, equal)
     end
     local function matching(env, owner, state)
         if state == "setup" then return env.console(owner) end
+        if state == "reserved" then
+            local ent = configured(env, owner, "data")
+            env.open(env.player(), ent)
+            assert(env.slicerConsoleHasActiveSession(ent))
+            return ent
+        end
         local ent = configured(env, owner)
         if state == "unconfirmed" then ent.SlicerDoor = env.entity("func_door") end
         if state == "linked" then link(env, owner, ent) end
@@ -58,6 +64,113 @@ return function(gmod, test, equal)
         return packet
     end
 
+    local function upvalue(callback, wanted)
+        local index = 1
+        while true do
+            local name, value = debug.getupvalue(callback, index)
+            if not name then error("Missing server state: " .. wanted) end
+            if name == wanted then return value end
+            index = index + 1
+        end
+    end
+    local function reserved(env, owner, folder)
+        local ent = configured(env, owner, folder)
+        if folder == "tools" then link(env, owner, ent) end
+        local hacker = env.player(); hacker:SetName("private hacker identity")
+        env.open(hacker, ent)
+        assert(env.slicerConsoleHasActiveSession(ent), "Use did not create reservation")
+        return ent, hacker
+    end
+
+    for _, folder in ipairs({"data", "server", "tools"}) do
+        test("reserved " .. folder .. " uses another player's actual session rather than the legacy flag", function()
+            local env = support.server(); local owner, other = env.player(), env.player()
+            local ent, hacker = reserved(env, owner, folder)
+            local foreign = reserved(env, other, folder)
+            local flagOnly = configured(env, owner, folder); flagOnly.SlicerInformation.inUse = true
+            ent.SlicerInformation.inUse = false
+            local allRows = request(env, owner, "!listConsoles")
+            owner.weapon = nil
+            function owner:GetEyeTrace() error("Reserved listing traced") end
+            function owner:GetActiveWeapon() error("Reserved listing read weapon") end
+            function hacker:GetName() error("Reserved listing read hacker identity") end
+            local rows, messages = filtered(env, owner, "reserved")
+            equal(#rows, 1, "Reserved filter must use the exact server reservation")
+            equal(rows[1], allRows[1], "Reserved filter changed the existing row description")
+            assert(not table.concat(messages, "\n"):find("private hacker identity", 1, true))
+            locate(env, owner, ent)
+            equal(#filtered(env, hacker, "reserved"), 0, "Hacking does not grant inventory ownership")
+            equal(#filtered(env, other, "reserved"), 1); locate(env, other, foreign)
+            equal(ent.SlicerInformation.inUse, false); equal(flagOnly.SlicerInformation.inUse, true)
+        end)
+
+        for _, ending in ipairs({"quit", "legacy quit", "death", "disconnect", "removal", "completion", "early completion"}) do
+            test("reserved " .. folder .. " leaves inventory on existing " .. ending .. " cleanup", function()
+                local env = support.server(); local owner = env.player()
+                local ent, hacker = reserved(env, owner, folder)
+                equal(#filtered(env, owner, "reserved"), 1)
+                if ending == "quit" then env.fire("PlayerSay", hacker, "!quitConsole")
+                elseif ending == "legacy quit" then env.receive("playerQuitConsole", hacker)
+                elseif ending == "death" then hacker.alive = false; env.fire("PlayerDeath", hacker)
+                elseif ending == "disconnect" then hacker.valid = false; env.fire("PlayerDisconnected", hacker)
+                elseif ending == "removal" then ent:Remove()
+                else
+                    if ending == "completion" then
+                        env.now = 999
+                        equal(#filtered(env, owner, "reserved"), 1, "Minimum completion time is not an expiry")
+                    end
+                    env.receive(folder == "tools" and "PlayerActivatedDoor" or "destroyOnServer", hacker, ent)
+                    equal(ent.removed, ending == "completion" and true or nil)
+                end
+                equal(env.slicerConsoleHasActiveSession(ent), false)
+                equal(#filtered(env, owner, "reserved"), 0)
+            end)
+        end
+    end
+
+    for _, actorState in ipairs({"invalid", "dead"}) do
+        test("reserved listing observes " .. actorState .. " actor until its lifecycle cleanup without changing any session", function()
+            local env = support.server(); local owner = env.player()
+            local ent, hacker = reserved(env, owner, "data")
+            local editable = configured(env, owner, "server")
+            owner.target = editable; env.fire("PlayerSay", owner, "!editConsole")
+            local selected = configured(env, owner, "tools"); owner.SlicerPendingConsole = selected
+            local sessions = upvalue(env.slicerConsoleHasActiveSession, "sessions")
+            local session, information, deadline = sessions[hacker], ent.SlicerInformation, sessions[hacker].completeAt
+            local tickets = upvalue(env.retireSlicerSetupEdit, "editTickets")
+            local ticket, serial, registry = tickets[editable], env.slicerSetupEditSerial, env.returnSpawnedEntities()
+            assert(ticket)
+            if actorState == "invalid" then hacker.valid = false else hacker.alive = false end
+            env.now = deadline + 100
+            for _, suffix in ipairs({"", " same"}) do
+                equal(#request(env, owner, "!listConsoles 1 reserved" .. suffix), 1)
+                equal(upvalue(env.slicerConsoleHasActiveSession, "sessions"), sessions)
+                equal(sessions[hacker], session); equal(session.console, ent); equal(session.completeAt, deadline)
+                local count = 0; for _ in pairs(sessions) do count = count + 1 end; equal(count, 1)
+                equal(ent.SlicerInformation, information); equal(information.inUse, true)
+                equal(upvalue(env.retireSlicerSetupEdit, "editTickets"), tickets); equal(tickets[editable], ticket)
+                equal(env.slicerSetupEditSerial, serial); equal(env.returnSpawnedEntities(), registry)
+                equal(owner.SlicerPendingConsole, selected)
+            end
+            env.fire(actorState == "invalid" and "PlayerDisconnected" or "PlayerDeath", hacker)
+            equal(#filtered(env, owner, "reserved"), 0)
+        end)
+    end
+
+    test("reserved plain state depends only on the reservation even when saved configuration changes", function()
+        local env = support.server(); local owner = env.player()
+        local ent = reserved(env, owner, "data")
+        local information = ent.SlicerInformation
+        for _, value in ipairs({false, 0, "tools", {}, {name = "same"}, {name = "same", delay = 0}}) do
+            ent.SlicerInformation = value
+            equal(#filtered(env, owner, "reserved"), 1)
+            equal(ent.SlicerInformation, value, "Listing repaired saved configuration")
+        end
+        ent.SlicerInformation = nil; equal(#filtered(env, owner, "reserved"), 1)
+        equal(#request(env, owner, "!listConsoles 1 reserved same"), 0)
+        ent.SlicerInformation = information
+    end)
+
     test("filtered setup lists a live unconfigured console and excludes configured inventory", function()
         local env = support.server(); local owner = env.player()
         configured(env, owner, "data")
@@ -76,7 +189,8 @@ return function(gmod, test, equal)
             " 1 ", "\t1 setup", "\n1 setup", "\r1 setup", "\v1 setup", "\f1 setup", " 1\tsetup", " 1\nsetup",
             " 1 setup\0", " 1 setup\127", " 1 setup\194\133", " 1 setup\226\128\168", " 1 setup\226\128\169",
             " " .. string.rep("9", 200000) .. " setup", " 1 " .. string.rep("s", 200000),
-            " linked", " 01 linked", " 10000000 linked", " 1 LINKED", " 1 Linked", " 1 linkedx", " 1  linked", " 1 linked "}
+            " linked", " 01 linked", " 10000000 linked", " 1 LINKED", " 1 Linked", " 1 linkedx", " 1  linked", " 1 linked ",
+            " reserved", " 01 reserved", " 10000000 reserved", " 1 RESERVED", " 1 Reserved", " 1 reservedx", " 1  reserved", " 1 reserved "}
         local enumerate, convert = env.ents.FindByClass, env.tonumber
         for _, suffix in ipairs(suffixes) do
             request(env, owner, "!listConsoles")
