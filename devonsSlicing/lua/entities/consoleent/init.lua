@@ -378,7 +378,16 @@ local function foldConsoleName(name)
     end))
 end
 
-local function showConsolePage(ply, page, query)
+local function matchesConsoleState(console, state)
+    if state == "setup" then return console.SlicerInformation == nil end
+    local information = normalizeSlicerInformation(console.SlicerInformation)
+    if not information or information.fileType ~= "tools" then return false end
+    local door = console.SlicerDoor
+    if state == "unlinked" then return door == nil end
+    return door ~= nil and (not IsValid(door) or not supportedDoors[door:GetClass()] or linkedDoors[door] ~= console)
+end
+
+local function showConsolePage(ply, page, query, state)
     -- Enumerate every live owned console, including deferred setup and copies
     -- missing from the configuration registry. Sort only our separate array.
     local consoles = {}
@@ -386,8 +395,8 @@ local function showConsolePage(ply, page, query)
     for _, console in ipairs(ents.FindByClass("consoleent")) do
         if IsValid(console) and console:GetClass() == "consoleent" and console.SlicerCreator == ply then
             local name = query and type(console.SlicerInformation) == "table" and console.SlicerInformation.name or nil
-            if not query or (type(name) == "string" and #name <= 128 and string.Trim(name) ~= ""
-                and foldConsoleName(name):find(foldedQuery, 1, true)) then
+            if (not state or matchesConsoleState(console, state)) and (not query or (type(name) == "string"
+                and #name <= 128 and string.Trim(name) ~= "" and foldConsoleName(name):find(foldedQuery, 1, true))) then
                 consoles[#consoles + 1] = console
             end
         end
@@ -403,12 +412,14 @@ local function showConsolePage(ply, page, query)
     local messages = {}
     if total == 0 then
         messages[1] = query and "No matching console names. Use !listConsoles for all your consoles, including those needing setup."
+            or state and ("You have no consoles matching state '" .. state .. "'.")
             or "You have no consoles."
     elseif page > pages then
         messages[1] = query and ("Search page must be between 1 and " .. pages .. ". Use !findConsoles <page> <text>.")
-            or ("Console page must be between 1 and " .. pages .. ". Use !listConsoles <page>.")
+            or ("Console page must be between 1 and " .. pages .. ". Use !listConsoles <page>" .. (state and " " .. state or "") .. ".")
     else
-        messages[1] = (query and "Your matching consoles: page " or "Your consoles: page ") .. page .. " of " .. pages
+        messages[1] = (query and "Your matching consoles: page " or state and ("Your consoles (" .. state .. "): page ")
+            or "Your consoles: page ") .. page .. " of " .. pages
             .. " (" .. total .. (query and " matches" or " total") .. "). Locate: !locateConsole <row>."
         local first = (page - 1) * consolesPerPage + 1
         local rows = {}
@@ -420,9 +431,10 @@ local function showConsolePage(ply, page, query)
         consoleListings[ply] = {rows = rows, expires = CurTime() + listingLifetime}
         if page < pages then
             messages[#messages + 1] = query and ("Next page: !findConsoles " .. (page + 1) .. " " .. query)
-                or ("Next page: !listConsoles " .. (page + 1) .. ".")
+                or ("Next page: !listConsoles " .. (page + 1) .. (state and " " .. state or "") .. ".")
         elseif page > 1 then
-            messages[#messages + 1] = query and ("First page: !findConsoles 1 " .. query) or "First page: !listConsoles."
+            messages[#messages + 1] = query and ("First page: !findConsoles 1 " .. query)
+                or state and ("First page: !listConsoles 1 " .. state .. ".") or "First page: !listConsoles."
         end
     end
     -- Prepare the complete reply before ChatPrint callbacks can remove or
@@ -435,19 +447,21 @@ hook.Add("PlayerSay", "slicerListConsoles", function(ply, text)
     if ply ~= nil then consoleListings[ply] = nil end
     if not IsValid(ply) or not ply:IsPlayer() or not ply:Alive() then return "" end
 
-    local page = 1
+    local page, state = 1
     if text ~= listConsolesCommand then
-        -- Bound decimal text before conversion, and require exactly one ASCII
-        -- space followed by 1-7 digits without a leading zero or extra text.
-        local suffix = #text <= #listConsolesCommand + 8 and text:sub(#listConsolesCommand + 1) or ""
-        if not suffix:match("^ [1-9][0-9]*$") then
-            ply:ChatPrint("Usage: !listConsoles or !listConsoles <page> (1-7 digits, no leading zero).")
+        -- Bound the whole command before extraction or conversion. Optional
+        -- state names are exact lowercase words, with one ASCII space per gap.
+        local suffix = #text <= #listConsolesCommand + 20 and text:sub(#listConsolesCommand + 1) or ""
+        local digits = suffix:match("^ ([1-9][0-9]*)$")
+        if not digits then digits, state = suffix:match("^ ([1-9][0-9]*) ([a-z]+)$") end
+        if not digits or #digits > 7 or (state and state ~= "setup" and state ~= "unlinked" and state ~= "unconfirmed") then
+            ply:ChatPrint("Usage: !listConsoles, !listConsoles <page>, or !listConsoles <page> <state> (1-7 digits, no leading zero; setup, unlinked, unconfirmed).")
             return ""
         end
-        page = tonumber(suffix:sub(2))
+        page = tonumber(digits)
     end
 
-    showConsolePage(ply, page)
+    showConsolePage(ply, page, nil, state)
     return ""
 end)
 

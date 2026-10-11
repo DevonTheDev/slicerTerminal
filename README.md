@@ -123,8 +123,26 @@ Each page contains up to five numbered consoles and uses the same complete names
 and link-state descriptions as `!inspectLink`. Use `!listConsoles 2` for page two,
 or the next-page command in the reply. A page argument requires exactly one
 ASCII space and 1–7 decimal digits beginning with 1–9. Leading zeros, signs,
-extra arguments and trailing whitespace receive private usage feedback;
+unsupported arguments and trailing whitespace receive private usage feedback;
 unavailable pages receive range feedback. Empty inventories get one clear reply.
+
+To show one current state, use `!listConsoles <page> <state>`, for example
+`!listConsoles 1 setup`. The only states are these exact lowercase words:
+
+- `setup`: no saved configuration, including deferred or unconfigured pasted consoles
+- `unlinked`: valid tools configuration with no door pointer, including deliberately unlinked consoles
+- `unconfirmed`: valid tools configuration with a nonnil door pointer whose entity
+  is unavailable, class is unsupported, or registered association does not match
+
+These are inventory categories, not a diagnosis or automatic repair. The existing
+row descriptions still distinguish an unavailable former door from an unconfirmed
+registration. Valid data/server consoles do not enter any of these categories,
+even with a legacy door pointer. Malformed nonnil configuration stays visible in
+the full inventory but does not count as setup or inferred tools configuration.
+Use one ASCII space before the page and before the state; the page is required
+when filtering. Totals and pages count only matching consoles, and next/first-page
+hints retain the state. Each request evaluates current entities afresh.
+`!listConsoles` and `!listConsoles <page>` keep showing the full inventory.
 
 The list sorts by current creation ID, then entity index when IDs collide.
 Same-name consoles and colliding IDs remain separate entries. Both identifiers are
@@ -182,9 +200,11 @@ consoles from that page for 60 seconds; they are not creation IDs. A fresh list
 or search replaces those rows, and a malformed, empty or unavailable-page
 request clears them. Refresh the list or search if a row expires,
 its console is removed, or ownership changes. Death and disconnect clear the rows.
-Locating does not rerun a search: a renamed console remains the same row while
-it is still yours, and its current name and position are used. Clearing the
-marker leaves unexpired rows usable.
+Filtered pages use these same rows and expiry. Locating does not rerun a name
+search or state filter: later renaming, setup or link changes leave an otherwise
+eligible live console as the same row, using its current name and position.
+Locating does not confirm that the previously displayed state still applies.
+Clearing the marker leaves unexpired rows usable.
 
 A successful request sends only you a 15-second location marker with the console's
 label, sampled position, distance in Source units and above/below guidance. Offscreen
@@ -572,6 +592,15 @@ output during callback-driven removal and preserved setup/edit/session/door
 state. The doubles establish callback and transport intent, not native chat
 delivery or compatibility with other chat addons.
 
+State-filter tests cover strict bounded grammar, exact nil versus malformed
+configuration, both supported door classes, deliberate unlinking and unconfirmed
+associations. They verify ownership before private reads, unregistered copies,
+same-name/ID ordering, filtered totals, shared row replacement/expiry and nested
+requests during prepared output. A real-handler workflow locates filtered rows,
+completes deferred setup and recovers a removed link while preserving unrelated
+acknowledgements, selection and an active hack's original deadline. Native chat,
+door I/O and multiplayer behavior remain unverified without Garry's Mod.
+
 Console-search tests exercise actual PlayerSay callbacks for byte limits,
 literal ASCII folding, Unicode distinctions, private ownership filtering,
 fresh pagination and shared exact-reference locate snapshots. A workflow checks
@@ -664,6 +693,14 @@ emulated. Before a live rollout, use a test server to check:
   commands. Check private replies, full-length ASCII/multibyte names, deferred
   setup and same-name copies. List while setup/edit forms or a live hack are
   open; verify pending choices, forms, original deadlines and doors are intact
+- Use `!listConsoles 1 setup`, `!listConsoles 1 unlinked` and
+  `!listConsoles 1 unconfirmed` with deferred/pasted consoles, deliberate
+  unlinking and unavailable or unregistered links for both door classes. Check
+  private totals and complete page hints. Locate a filtered row, then configure,
+  rename or relink its console before locating the same row again; check that
+  the exact live console remains locatable until expiry without promising its
+  old state. Switch among full lists, name searches and filtered pages while
+  other players' hacks and pending setup/edit replies remain usable
 - Use `!findConsoles 1 <text>` with mixed ASCII case, numeric names, literal
   punctuation and 128-byte ASCII/multibyte text. Check what the native chat
   entry accepts, private filtered pages and repeatable page hints. Locate a
