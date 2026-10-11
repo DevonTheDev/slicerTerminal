@@ -13,8 +13,10 @@ and terminal-driven downloads or door unlocking.
    finite positive number of seconds; the folder is `data`, `server`, or `tools`.
    **Done** reads the current fields, including the active text entry, and waits
    for the server's matching acknowledgement. Fields stay visible and locked
-   while submitting. A rejection keeps the draft available with a status message;
-   an acceptance closes that form. Each new form starts without previous values.
+   while submitting. If the reply is lost, **Check setup result** manually checks
+   the original submission without sending setup again. A rejection keeps the
+   draft available with a status message; an acceptance closes that form.
+   Each new form starts without previous values.
 3. Accepted `tools` setup selects that terminal for its creator. Look at the
    intended console and type `!setEntity`; check the named selection confirmation.
    Then look at a `func_door` or `func_door_rotating` and type `!setEntity` again
@@ -266,9 +268,9 @@ Reopening a setup that is already on screen brings that same form forward and
 keeps its current fields. Different consoles keep separate forms. Closing one
 does not submit another console's configuration, release an active hack or
 change a pending door selection. While a submission is pending, dismissal reads
-**Close** and cannot undo a setup already accepted by the server. A lost reply
-may leave the form pending until you close it; no automatic retry is promised.
-Delayed replies cannot close a later form or another console's draft. Rejected
+**Close** and cannot undo a setup already accepted by the server. After sending,
+Done becomes **Check setup result** in the same button slot; the four inputs
+remain locked. Delayed replies cannot close a later form or another console's draft. Rejected
 setup never gives door-link guidance or changes a different pending selection.
 
 Once the server accepts initial setup, Use follows the normal hacking flow.
@@ -276,6 +278,43 @@ Correct saved values through the separate edit command below; initial setup
 cannot overwrite them. Updated client files are required for the acknowledged
 form flow. Legacy five-field setup packets retain their original server
 validation and do not receive a correlated acknowledgement.
+
+### Check a missing initial setup reply
+
+While the original form is still pending, choose **Check setup result** to ask
+whether that exact submission was accepted. Checks use its frozen original
+fields and token, with at most one manual query every two seconds. There is no
+automatic polling or retry, and checking never resends setup, rewrites settings,
+selects a console or links a door. If a check's reply is also lost, you can check
+again after the cooldown. Close still dismisses only the local form.
+
+A confirmed result closes that pending form and reports historical acceptance.
+Saved settings may have changed since then. For tools, the guidance identifies
+the original setup: look at the intended console and type `!setEntity` first,
+then look at its intended door and type `!setEntity` again. Checking does not
+restore an earlier pending selection; `!cancelLink` remains available.
+
+An unconfirmed result leaves the form and its draft locked. It does **not** mean
+the setup was rejected or can safely be sent again. You can close the form and
+use the console to check its current state. A later genuine initial reply can
+still accept the form or unlock a rejected draft normally. Older servers that
+cannot start the new query show an unavailable status and retain this same
+uncertainty; they receive no replacement setup request.
+
+The server keeps one private receipt per live console for correlated acceptance,
+matched to the authenticated creator, token and all five original scalar fields.
+Missing, ambiguous or mismatched evidence is unconfirmed. Removal, copied-state
+reset, disconnect or a server config reinclude retires receipts; changed owner,
+class, creation ID or entity index also invalidates them. Legacy tokenless setup
+and target identity strings over 256 bytes create no receipt, without changing
+existing setup admission. Receipts are not persisted or copied. Ordinary death,
+saved edits and hacking/link changes do not erase historical acceptance.
+
+Callback tests cover dropped/reordered replies, exact binding, lifecycle cleanup,
+reentrant callbacks, simultaneous forms, older-server query-start failure and
+unchanged hacks/door choices. The six-row layout and 72-pixel status area stay
+unchanged. Native font wrapping for checking, unconfirmed and unavailable text,
+Derma focus/clicks and mixed-version multiplayer delivery still need a game check.
 
 ### Correct a saved console setup
 
@@ -706,6 +745,13 @@ emulated. Before a live rollout, use a test server to check:
 - Choose Set up later, then use the unconfigured console without the hacking
   tool and finish a fresh setup. Confirm another player cannot reopen it; reopen
   an already visible setup and check its typing and focus are retained
+- Deliberately delay/drop the first accepted setup reply for data, server and
+  tools. Choose Check setup result, confirm the pending form closes once, and
+  verify no setup resend or changed pending door choice. Lose a status reply,
+  check again manually after two seconds, and deliver a late original reply.
+  Check unconfirmed and unavailable status text at 640×480 and 1920×1080,
+  including after a live resize; verify complete wrapping, readable controls
+  and retained locked fields. Try an older server and two simultaneous forms
 - Try a blank name/file, missing folder, and nonpositive delay; correct each
   rejected form and verify it can still configure its terminal
 - Equip the hacking tool and verify its pistol hold animation in multiplayer;

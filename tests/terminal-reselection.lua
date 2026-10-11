@@ -21,7 +21,7 @@ return function(gmod, test, equal)
         done:DoClick()
         local packet = assert(client.lastMessage("AdminFinishedCreation"))
         equal(frame.valid, true, "Setup stays open while its request is pending")
-        equal(done.enabled, false)
+        equal(done.enabled, true); equal(done.text, "Check setup result")
         local before = #server.messages
         server.receive(packet.name, owner, unpackValues(packet.values))
         equal(#server.messages, before + 1)

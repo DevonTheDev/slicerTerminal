@@ -257,7 +257,7 @@ end
 
 local function assertSetupPending(form)
     equal(form.frame.valid, true, "Submission stays visible until its matching server reply")
-    equal(form.done.enabled, false, "Pending Done cannot submit twice")
+    equal(form.done.enabled, true); equal(form.done.text, "Check setup result", "Pending action only checks the result")
     equal(form.folder.enabled, false, "Pending folder is locked")
     for _, entry in ipairs({form.name, form.delay, form.file}) do
         equal(entry.editable, false, "Pending submitted fields are readonly")
@@ -609,6 +609,7 @@ dofile("tests/cancel-link-workflow.lua")(gmod, test, equal)
 dofile("tests/deferred-setup.lua")(gmod, test, equal)
 dofile("tests/initial-setup-ack-core.lua")(gmod, test, equal)
 dofile("tests/initial-setup-ack-workflow.lua")(gmod, test, equal)
+dofile("tests/initial-setup-result-recovery.lua")(gmod, test, equal)
 dofile("tests/duplication.lua")(gmod, test, equal)
 dofile("tests/setup-layout.lua")(gmod, test, equal)
 dofile("tests/player-layout.lua")(gmod, test, equal)

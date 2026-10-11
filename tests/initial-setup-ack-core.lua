@@ -72,9 +72,10 @@ return function(gmod, test, equal)
         if result == nil then result = {ok = true, name = "current terminal", fileType = "data"} end
         client.receive(replyName, nil, token, result)
     end
-    local function pending(form, value)
+    local function pending(form, value, sending)
         equal(form.frame.valid, true, "Draft stays visible until acceptance")
-        equal(form.done.enabled, not value)
+        equal(form.done.enabled, not sending)
+        equal(form.done.text, value and not sending and "Check setup result" or "Done")
         equal(form.folder.enabled, not value)
         for _, input in ipairs({form.name, form.delay, form.file}) do equal(input.editable, not value) end
         equal(form.later.text, value and "Close" or "Set up later")
@@ -268,7 +269,7 @@ return function(gmod, test, equal)
             local outgoing = client.outgoing
             if outgoing.name == "AdminFinishedCreation" then
                 form.done:DoClick()
-                pending(form, true)
+                pending(form, true, true)
                 server.receive(outgoing.name, owner, unpackValues(outgoing.values))
                 deliver(client, assert(server.lastMessage(replyName)))
             end

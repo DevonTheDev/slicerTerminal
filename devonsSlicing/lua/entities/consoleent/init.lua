@@ -73,6 +73,7 @@ function ENT:OnEntityCopyTableFinish(data)
 end
 
 local function resetCopiedState(console)
+    retireSlicerInitialSetupReceipt(console)
     retireSlicerSetupEdit(console)
     console.SlicerCreator, console.SlicerDoor = nil, nil
     console.SlicerInformation = normalizeSlicerInformation(console.SlicerInformation)
@@ -182,6 +183,7 @@ hook.Add("PlayerDeath", "checkForInConsole", function(victim)
 end)
 
 hook.Add("PlayerDisconnected", "slicerReleaseConsole", function(ply)
+    retireSlicerInitialSetupReceiptsForPlayer(ply)
     consoleListings[ply] = nil
     retireSlicerSetupEditsForPlayer(ply)
     releaseSession(ply, false)
@@ -613,6 +615,7 @@ net.Receive("destroyOnServer", function(_, ply)
 end)
 
 function ENT:OnRemove()
+    retireSlicerInitialSetupReceipt(self)
     retireSlicerSetupEdit(self)
     for ply, session in pairs(sessions) do
         if session.console == self then releaseSession(ply, true) end

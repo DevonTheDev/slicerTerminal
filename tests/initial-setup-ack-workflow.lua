@@ -94,7 +94,7 @@ return function(gmod, test, equal)
     end
     local function pending(form)
         equal(live(form.frame), true, "Done must retain the visible draft until acknowledgement")
-        equal(form.done.enabled, false); equal(form.folder.enabled, false)
+        equal(form.done.enabled, true); equal(form.done.text, "Check setup result"); equal(form.folder.enabled, false)
         for _, input in ipairs(form.inputs) do equal(input.editable, false) end
         equal(form.later.text, "Close", "Pending dismissal does not promise deferral")
         assert(form.status and live(form.status), "Pending state needs a visible explanation")
@@ -117,8 +117,8 @@ return function(gmod, test, equal)
         assert(type(token) == "string" and #token <= 16 and token:match("^[1-9]%d*$"), "Canonical request token")
         assert(tonumber(token) <= 9007199254740991, "Exact bounded token")
         equal(session.client.lastMessage("ServerWaitingForEntity"), nil, "No obsolete pending-selection packet")
-        form.done:DoClick()
-        equal(#session.client.messages, count + 1, "Repeated pending Done is harmless")
+        equal(form.done.text, "Check setup result")
+        equal(#session.client.messages, count + 1, "Pending check mode sends no automatic traffic")
         return packet
     end
     local function response(session, packet, accepted, sender)

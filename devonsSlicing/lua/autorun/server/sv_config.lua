@@ -188,6 +188,59 @@ local function validInitialSetupToken(token)
         and (#token < 16 or token <= "9007199254740991")
 end
 
+-- Historical initial acceptance is private, bounded to one receipt per console.
+-- Reinclude deliberately forgets receipts; current configuration is not proof.
+local initialSetupReceipts = {}
+
+function retireSlicerInitialSetupReceipt(console)
+    if console ~= nil then initialSetupReceipts[console] = nil end
+end
+
+function retireSlicerInitialSetupReceiptsForPlayer(ply)
+    for console, receipt in pairs(initialSetupReceipts) do
+        if receipt.player == ply then initialSetupReceipts[console] = nil end
+    end
+end
+
+local function usableInitialSetupReceipt(console, receipt)
+    return IsValid(console) and console:GetClass() == "consoleent"
+        and console:GetCreationID() == receipt.creationID and console:EntIndex() == receipt.entityIndex
+        and IsValid(receipt.player) and receipt.player:IsPlayer() and console.SlicerCreator == receipt.player
+end
+
+util.AddNetworkString("SlicerInitialSetupStatusRequest")
+util.AddNetworkString("SlicerInitialSetupStatusReply")
+net.Receive("SlicerInitialSetupStatusRequest", function(_, ply)
+    if not IsValid(ply) or not ply:IsPlayer() then return end
+    local fields = net.ReadTable()
+    if type(fields) ~= "table" or not validInitialSetupToken(fields[6]) then return end
+    local token, result = fields[6], {confirmed = false}
+    if type(fields[5]) == "string" and #fields[5] <= 256
+        and normalizeSlicerInformation({name = fields[1], delay = fields[2], fileType = fields[3], fileName = fields[4]}) then
+        local candidate, matches = nil, 0
+        for console, receipt in pairs(initialSetupReceipts) do
+            if not usableInitialSetupReceipt(console, receipt) then
+                initialSetupReceipts[console] = nil
+            elseif receipt.player == ply and receipt.token == token then
+                candidate, matches = receipt, matches + 1
+            end
+        end
+        -- Count player/token candidates before comparing fields: ambiguous
+        -- identities must never choose the first otherwise matching receipt.
+        if matches == 1 then
+            local exact = true
+            for i = 1, 5 do if candidate.fields[i] ~= fields[i] then exact = false end end
+            if exact then
+                result = {confirmed = true, name = candidate.name, fileType = candidate.fileType}
+            end
+        end
+    end
+    net.Start("SlicerInitialSetupStatusReply")
+        net.WriteString(token)
+        net.WriteTable(result)
+    net.Send(ply)
+end)
+
 local function initialSetupReply(ply, token, result)
     if token == nil then return end -- Legacy clients did not request a reply.
     net.Start("SlicerInitialSetupReply")
@@ -236,6 +289,16 @@ net.Receive("AdminFinishedCreation", function(_, ply)
     target.SlicerInformation = information
     table.insert(spawnedEntities, {entityName = entityName, entity = target, information = information})
     if fileType == "tools" then ply.SlicerPendingConsole = target end
+    -- Commit the receipt before any response can reenter. Identity length only
+    -- limits recovery storage, never changes the original setup admission.
+    if token ~= nil then
+        initialSetupReceipts[target] = nil
+        if #entityName <= 256 then
+            initialSetupReceipts[target] = {player = ply, creationID = target:GetCreationID(), entityIndex = target:EntIndex(),
+                token = token, fields = {name, delay, fileType, fileName, entityName},
+                name = information.name, fileType = information.fileType}
+        end
+    end
     initialSetupReply(ply, token, {ok = true, name = information.name, fileType = information.fileType})
 end)
 

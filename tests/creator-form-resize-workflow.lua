@@ -124,7 +124,8 @@ return function(gmod, test, equal)
     end
     local function pending(form, expected)
         equal(support.live(form.frame), true)
-        equal(form.submit.enabled, not expected)
+        equal(form.submit.enabled, not (expected and form.editing))
+        if not form.editing then equal(form.submit.text, expected and "Check setup result" or "Done") end
         for _, input in ipairs(form.inputs) do equal(input.editable, not expected) end
         if form.folder then equal(form.folder.enabled, not expected) end
         equal(form.dismiss.text, expected and "Close" or (form.editing and "Cancel" or "Set up later"))

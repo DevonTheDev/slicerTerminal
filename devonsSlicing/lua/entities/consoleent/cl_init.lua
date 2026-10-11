@@ -604,6 +604,7 @@ net.Receive("PlayerSpawnedConsole", function()
         status:SetTextColor(failed and Color(255, 150, 150, 255) or Color(220, 220, 220, 255))
     end
     local function lockInputs(pending)
+        finishButton:SetText("Done")
         finishButton:SetEnabled(not pending)
         fileType:SetEnabled(not pending)
         laterButton:SetText(pending and "Close" or "Set up later")
@@ -613,8 +614,12 @@ net.Receive("PlayerSpawnedConsole", function()
     lockInputs(false)
 
     function finishButton.DoClick()
-        if not setup.isCurrent() or setup.pending or not IsValid(callingPlayer)
+        if not setup.isCurrent() or not IsValid(callingPlayer)
             or not callingPlayer:IsPlayer() or not callingPlayer:Alive() then return end
+        if setup.pending then
+            if setup.pending.check then setup.pending.check() end
+            return
+        end
         -- Read current focused controls rather than stale focus-loss callbacks.
         local enteredConsoleName = consoleNameFrame:GetValue()
         local enteredSliceDelay = tonumber(slicerTime:GetValue())
@@ -635,10 +640,16 @@ net.Receive("PlayerSpawnedConsole", function()
             return
         end
         local submission = {token = token}
+        local snapshot = {enteredConsoleName, enteredSliceDelay, enteredFileType, enteredFileName, sentConsoleName, token}
         setup.pending, setupRequests[token] = submission, submission
+        local function ownsSubmission()
+            return setup.isCurrent() and setup.pending == submission and setupRequests[token] == submission
+        end
+        local function packet()
+            return {snapshot[1], snapshot[2], snapshot[3], snapshot[4], snapshot[5], snapshot[6]}
+        end
         function submission.reply(result)
-            if not setup.isCurrent() or setup.pending ~= submission or setupRequests[token] ~= submission
-                or type(result) ~= "table" then return end
+            if not ownsSubmission() or type(result) ~= "table" then return end
             if result.ok == true then
                 if type(result.name) ~= "string" or #result.name > 128 or string.Trim(result.name) == ""
                     or result.fileType ~= enteredFileType then return end
@@ -658,13 +669,52 @@ net.Receive("PlayerSpawnedConsole", function()
                 showStatus(result.message, true)
             end
         end
+        function submission.statusReply(result)
+            if not ownsSubmission() or type(result) ~= "table" then return end
+            if result.confirmed == true then
+                if type(result.name) ~= "string" or #result.name > 128 or string.Trim(result.name) == ""
+                    or result.fileType ~= enteredFileType then return end
+                retireSetup()
+                initialParent:Close()
+                if IsValid(callingPlayer) and callingPlayer:IsPlayer() then
+                    callingPlayer:ChatPrint("The original setup was accepted earlier; saved settings may have changed since then.")
+                    if result.fileType == "tools" then
+                        local displayName = result.name:gsub("[%z\1-\31\127]", " ")
+                        callingPlayer:ChatPrint('Original tools setup: "' .. displayName .. '". Look at its console and type !setEntity first.')
+                        callingPlayer:ChatPrint("Then look at its intended door and type !setEntity to link it, or type !cancelLink to cancel your selection.")
+                    end
+                end
+            elseif result.confirmed == false then
+                showStatus("The original result cannot be confirmed. It may already have been accepted. Close this form and use the console to check its current state.", true)
+            end
+        end
+        function submission.check()
+            if not ownsSubmission() or not submission.ready or not IsValid(callingPlayer)
+                or not callingPlayer:IsPlayer() or not callingPlayer:Alive()
+                or (submission.nextCheck and CurTime() < submission.nextCheck) then return end
+            submission.nextCheck = CurTime() + 2 -- Set before any native call can reenter.
+            showStatus("Checking the original setup result. Closing cannot undo an accepted setup.", false)
+            if not pcall(net.Start, "SlicerInitialSetupStatusRequest") then
+                if ownsSubmission() then
+                    showStatus("Result checking is unavailable on this server. The original setup may already have been accepted; you can close this form.", true)
+                end
+                return
+            end
+                net.WriteTable(packet())
+            net.SendToServer()
+        end
         -- Register and lock before sending: a reentrant click or immediate reply
         -- must observe the exact current submission and its immutable draft.
         lockInputs(true)
         showStatus("Saving setup... Closing cannot undo an accepted setup.", false)
         net.Start("AdminFinishedCreation")
-            net.WriteTable({enteredConsoleName, enteredSliceDelay, enteredFileType, enteredFileName, sentConsoleName, token})
+            net.WriteTable(packet())
         net.SendToServer()
+        if ownsSubmission() then
+            submission.ready = true
+            finishButton:SetText("Check setup result")
+            finishButton:SetEnabled(true)
+        end
     end
     function laterButton.DoClick()
         if setup.isCurrent() then setup.close() end -- Dismissal never cancels a server commit or another hack.
@@ -690,6 +740,13 @@ net.Receive("SlicerInitialSetupReply", function()
     if type(token) ~= "string" then return end
     local submission = setupRequests[token]
     if submission then submission.reply(result) end
+end)
+
+net.Receive("SlicerInitialSetupStatusReply", function()
+    local token, result = net.ReadString(), net.ReadTable()
+    if type(token) ~= "string" then return end
+    local submission = setupRequests[token]
+    if submission and submission.statusReply then submission.statusReply(result) end
 end)
 
 -- Configured-console edits are independent of initial setup and hacking sessions.
