@@ -40,9 +40,9 @@ and terminal-driven downloads or door unlocking.
 
 ### Select a listed console for a door
 
-After `!listConsoles` or `!findConsoles`, type exactly `!setEntity 1` through
-`!setEntity 5` to select that row of your most recent page, including filtered
-pages. You can stay near the intended door: check the named confirmation, then
+After `!listConsoles`, `!findConsoles` or `!nearConsoles`, type exactly
+`!setEntity 1` through `!setEntity 5` to select that row of your most recent page,
+including filtered pages. You can stay near the intended door: check the named confirmation, then
 look at a `func_door` or `func_door_rotating` and type bare `!setEntity` to link it.
 The row command needs a living creator and a currently configured, idle tools
 console with no door pointer or active hacking reservation. A removed former
@@ -51,7 +51,7 @@ required to select a row. Near matches, extra spaces and trailing text remain
 ordinary chat; the existing look-at-console command still works.
 
 Rows refer to the exact entities printed for 60 seconds, not creation IDs.
-Selection does not refresh that deadline. A new list/search replaces the page,
+Selection does not refresh that deadline. A new catalogue request replaces the page,
 and invalid or empty requests clear it. Unavailable rows give private relisting
 guidance; ineligible consoles must become eligible before selection. Either
 refusal preserves your previous pending choice. Renaming or changing a filter
@@ -239,6 +239,36 @@ native chat delivery, chat-addon compatibility and long/multibyte-name
 readability remain unverified and need the in-game smoke check below.
 
 
+### List your nearest consoles
+
+Type exactly `!nearConsoles` or `!nearConsoles <page>` for a private nearest-first
+inventory of your own consoles. This includes setup-needed, data, server, tools
+and currently reserved consoles. You must be a living player; no tool or eye
+trace is needed, and being an admin does not grant access to another creator's
+consoles. The page uses the same one-space, 1–7 ASCII digits, no-leading-zero
+rules as the full inventory. Name queries and state arguments are not supported.
+Malformed recognized arguments get private guidance; command near matches stay
+ordinary chat.
+
+The header identifies a nearest-first request snapshot. The server samples your
+position once and each owned console's position once, then sorts by 3D
+straight-line distance. This is geometric proximity, not a pathfinding or travel
+distance. Equal distances use current creation ID, then entity index. Consoles
+with unavailable/nonfinite positions or overflowing squared distances remain
+after measured consoles, ordered by those same IDs. If your own position is
+unavailable/nonfinite, the command clears your previous rows and asks you to
+try again.
+
+Each page has up to five rows with the existing inspection names and link states.
+Use the reply's `!nearConsoles` next/first-page hint to request another page.
+Every request samples positions again, so movement can shift pages. Previously
+printed rows keep their exact console references for 60 seconds until another
+catalogue request replaces them; locating, editing and selecting those rows use
+the existing creator and eligibility checks. Malformed, empty or out-of-range
+requests clear the previous page. Listing changes no saved configuration, doors,
+pending selection, setup/edit records, active hacks, deadlines or locator marker.
+The default `!listConsoles` and `!findConsoles` ordering and replies stay unchanged.
+
 ### Find a console by its saved name
 
 Type `!findConsoles 1 reactor west` for a private first page of your consoles
@@ -273,11 +303,11 @@ chat only and leaves any existing location marker alone.
 
 ### Locate a listed or found console
 
-After `!listConsoles` or `!findConsoles`, type `!locateConsole 2` to mark row 2
-of your most recently shown list or search page. Rows 1–5 refer to the exact
-consoles from that page for 60 seconds; they are not creation IDs. A fresh list
-or search replaces those rows, and a malformed, empty or unavailable-page
-request clears them. Refresh the list or search if a row expires,
+After `!listConsoles`, `!findConsoles` or `!nearConsoles`, type `!locateConsole 2`
+to mark row 2 of your most recently shown catalogue page. Rows 1–5 refer to the
+exact consoles from that page for 60 seconds; they are not creation IDs. A fresh
+catalogue request replaces those rows, and a malformed, empty or unavailable-page
+request clears them. Request another page if a row expires,
 its console is removed, or ownership changes. Death and disconnect clear the rows.
 State-only and combined name/state pages use these same rows and expiry. Locating does not rerun a name
 search or state filter: later renaming, setup or link changes leave an otherwise
@@ -362,12 +392,13 @@ Derma focus/clicks and mixed-version multiplayer delivery still need a game chec
 
 Look at one of your configured, idle consoles and type `!editConsole` in chat.
 You can also use `!editConsole 1` through `!editConsole 5` to edit that exact row
-from your latest `!listConsoles` or `!findConsoles` page, including filtered pages.
+from your latest `!listConsoles`, `!findConsoles` or `!nearConsoles` page, including
+filtered pages.
 The row command requires one space and one digit, with no trailing whitespace;
 other edit-like text stays ordinary chat. The row is private to you and lasts
 60 seconds from the listing. Opening an editor or locating a row does not extend
 or consume that time, and clearing the locator marker keeps the page available.
-Listing or searching again replaces the page; an invalid or empty request clears
+A new catalogue request replaces the page; an invalid or empty request clears
 it. Unavailable rows ask you to list again and never select what you are looking
 at. Setup-needed or busy consoles must become configured and idle before editing.
 The saved row follows the same console even if its name or filter state changes.
@@ -731,6 +762,14 @@ completes deferred setup and recovers a removed link while preserving unrelated
 acknowledgements, selection and an active hack's original deadline. Native chat,
 door I/O and multiplayer behavior remain unverified without Garry's Mod.
 
+Nearest-catalogue tests exercise the actual PlayerSay hooks for one-time 3D
+position samples, deterministic ties, unavailable origins/console coordinates,
+overflow, private ownership, pagination after movement, and exact-reference row
+actions with the shared 60-second lease. They check reentrant listing replacement,
+inspection byte budgets, state preservation and exact default list/search replies
+without position calls. These checks ran on texlua's Lua 5.3; native engine
+vectors, movement and chat behavior still need an in-game smoke check.
+
 Console-search tests exercise actual PlayerSay callbacks for byte limits,
 literal ASCII folding, Unicode distinctions, private ownership filtering,
 fresh pagination and shared exact-reference locate snapshots. A workflow checks
@@ -831,6 +870,9 @@ emulated. Before a live rollout, use a test server to check:
 - Inspect each console and door with `!inspectLink` as its creator, including
   while another player is hacking. Check private replies, unchanged deadlines,
   same-name copy IDs, and readability of long and multibyte console names
+- Place owned consoles at different heights and distances, then use
+  `!nearConsoles` and its page hints. Move before requesting another page and
+  check the snapshot order, private replies and exact locate/edit/select rows
 - With more than five owned consoles, use `!listConsoles` and its next-page
   commands. Check private replies, full-length ASCII/multibyte names, deferred
   setup and same-name copies. List while setup/edit forms or a live hack are

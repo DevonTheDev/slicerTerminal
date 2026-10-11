@@ -406,6 +406,7 @@ hook.Add("PlayerSay", "slicerInspectLink", function(ply, text)
 end)
 
 local listConsolesCommand = "!listConsoles"
+local nearConsolesCommand = "!nearConsoles"
 local consolesPerPage = 5
 
 -- Only ASCII A-Z fold. Preserve every other saved byte, independently of
@@ -434,10 +435,27 @@ local function matchesConsoleState(console, state)
     return door ~= nil and (not IsValid(door) or not supportedDoors[door:GetClass()] or linkedDoors[door] ~= console)
 end
 
-local function showConsolePage(ply, page, query, state)
+local function finiteConsoleNumber(value)
+    return type(value) == "number" and value > -math.huge and value < math.huge
+end
+
+-- GetPos may be unavailable on a retiring entity. Copy finite native vector
+-- coordinates once, so later samples cannot mutate the request's distances.
+local function consolePositionSnapshot(entity)
+    local ok, x, y, z = pcall(function()
+        local position = entity:GetPos()
+        return position.x, position.y, position.z
+    end)
+    if ok and finiteConsoleNumber(x) and finiteConsoleNumber(y) and finiteConsoleNumber(z) then
+        return {x = x, y = y, z = z}
+    end
+end
+
+local function showConsolePage(ply, page, query, state, origin)
     -- Enumerate every live owned console, including deferred setup and copies
     -- missing from the configuration registry. Sort only our separate array.
     local consoles = {}
+    local distances = origin and {}
     local foldedQuery = query and foldConsoleName(query)
     for _, console in ipairs(ents.FindByClass("consoleent")) do
         if IsValid(console) and console:GetClass() == "consoleent" and console.SlicerCreator == ply then
@@ -445,10 +463,26 @@ local function showConsolePage(ply, page, query, state)
             if (not state or matchesConsoleState(console, state)) and (not query or (type(name) == "string"
                 and #name <= 128 and string.Trim(name) ~= "" and foldConsoleName(name):find(foldedQuery, 1, true))) then
                 consoles[#consoles + 1] = console
+                if distances then
+                    local position = consolePositionSnapshot(console)
+                    if position then
+                        local x, y, z = position.x - origin.x, position.y - origin.y, position.z - origin.z
+                        local distance = x * x + y * y + z * z
+                        if finiteConsoleNumber(distance) then distances[console] = distance end
+                    end
+                end
             end
         end
     end
     table.sort(consoles, function(first, second)
+        if distances then
+            local firstDistance, secondDistance = distances[first], distances[second]
+            if firstDistance ~= secondDistance then
+                if firstDistance == nil then return false end
+                if secondDistance == nil then return true end
+                return firstDistance < secondDistance
+            end
+        end
         local firstID, secondID = first:GetCreationID(), second:GetCreationID()
         if firstID == secondID then return first:EntIndex() < second:EntIndex() end
         return firstID < secondID
@@ -463,11 +497,13 @@ local function showConsolePage(ply, page, query, state)
             or state and ("You have no consoles matching state '" .. state .. "'.")
             or "You have no consoles."
     elseif page > pages then
-        messages[1] = query and state and ("Search page must be between 1 and " .. pages .. ". Use !listConsoles <page> " .. state .. " <text>.")
+        messages[1] = origin and ("Console page must be between 1 and " .. pages .. ". Use !nearConsoles <page>.")
+            or query and state and ("Search page must be between 1 and " .. pages .. ". Use !listConsoles <page> " .. state .. " <text>.")
             or query and ("Search page must be between 1 and " .. pages .. ". Use !findConsoles <page> <text>.")
             or ("Console page must be between 1 and " .. pages .. ". Use !listConsoles <page>" .. (state and " " .. state or "") .. ".")
     else
-        messages[1] = (query and state and ("Your matching consoles (" .. state .. "): page ")
+        messages[1] = (origin and "Your consoles (nearest-first request snapshot): page "
+            or query and state and ("Your matching consoles (" .. state .. "): page ")
             or query and "Your matching consoles: page " or state and ("Your consoles (" .. state .. "): page ")
             or "Your consoles: page ") .. page .. " of " .. pages
             .. " (" .. total .. (query and " matches" or " total") .. "). Locate: !locateConsole <row>."
@@ -480,11 +516,13 @@ local function showConsolePage(ply, page, query, state)
         end
         consoleListings[ply] = {rows = rows, expires = CurTime() + listingLifetime}
         if page < pages then
-            messages[#messages + 1] = query and state and ("Next page: !listConsoles " .. (page + 1) .. " " .. state .. " " .. query)
+            messages[#messages + 1] = origin and ("Next page: !nearConsoles " .. (page + 1) .. ".")
+                or query and state and ("Next page: !listConsoles " .. (page + 1) .. " " .. state .. " " .. query)
                 or query and ("Next page: !findConsoles " .. (page + 1) .. " " .. query)
                 or ("Next page: !listConsoles " .. (page + 1) .. (state and " " .. state or "") .. ".")
         elseif page > 1 then
-            messages[#messages + 1] = query and state and ("First page: !listConsoles 1 " .. state .. " " .. query)
+            messages[#messages + 1] = origin and "First page: !nearConsoles."
+                or query and state and ("First page: !listConsoles 1 " .. state .. " " .. query)
                 or query and ("First page: !findConsoles 1 " .. query)
                 or state and ("First page: !listConsoles 1 " .. state .. ".") or "First page: !listConsoles."
         end
@@ -542,6 +580,29 @@ hook.Add("PlayerSay", "slicerFindConsoles", function(ply, text)
         return ""
     end
     showConsolePage(ply, tonumber(page), query)
+    return ""
+end)
+
+hook.Add("PlayerSay", "slicerNearConsoles", function(ply, text)
+    if text ~= nearConsolesCommand and not text:find("^!nearConsoles%s") then return end
+    if ply ~= nil then consoleListings[ply] = nil end
+    if not IsValid(ply) or not ply:IsPlayer() or not ply:Alive() then return "" end
+
+    local page = 1
+    if text ~= nearConsolesCommand then
+        local digits = #text <= #nearConsolesCommand + 8 and text:match("^!nearConsoles ([1-9][0-9]*)$")
+        if not digits or #digits > 7 then
+            ply:ChatPrint("Usage: !nearConsoles or !nearConsoles <page> (1-7 digits, no leading zero).")
+            return ""
+        end
+        page = tonumber(digits)
+    end
+    local origin = consolePositionSnapshot(ply)
+    if not origin then
+        ply:ChatPrint("Your position is unavailable. Try !nearConsoles again.")
+        return ""
+    end
+    showConsolePage(ply, page, nil, nil, origin)
     return ""
 end)
 
