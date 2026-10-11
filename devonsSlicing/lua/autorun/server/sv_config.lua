@@ -108,9 +108,21 @@ for _, name in ipairs({"SlicerSetupEditOpen", "SlicerSetupEditSave", "SlicerSetu
 end
 
 hook.Add("PlayerSay", "slicerEditConsole", function(ply, text)
-    if text ~= "!editConsole" then return end
+    local row = #text == 14 and text:match("^!editConsole ([1-5])$")
+    if text ~= "!editConsole" and not row then return end
     if not IsValid(ply) or not ply:IsPlayer() or not ply:Alive() then return "" end
-    local console = ply:GetEyeTrace().Entity
+    local console
+    if row then
+        -- Resolve at command time: config can be included before entity init,
+        -- and init reinclude replaces the private listing closure.
+        if type(slicerListedConsole) == "function" then console = slicerListedConsole(ply, tonumber(row)) end
+        if not console then
+            ply:ChatPrint("That console row is unavailable or expired. Use !listConsoles or !findConsoles again, then !editConsole <row>.")
+            return ""
+        end
+    else
+        console = ply:GetEyeTrace().Entity
+    end
     local ticket = console ~= nil and editTickets[console] or nil
     if ticket and not currentEdit(ticket, ticket.player, console) then
         retireSlicerSetupEdit(console)
@@ -118,7 +130,8 @@ hook.Add("PlayerSay", "slicerEditConsole", function(ply, text)
     end
     local information, normalized, record = editContext(ply, console)
     if not information then
-        ply:ChatPrint("Look at one of your configured, idle consoles and type !editConsole to edit it.")
+        ply:ChatPrint(row and "That listed console must be one of your configured, idle consoles before you can edit it."
+            or "Look at one of your configured, idle consoles and type !editConsole to edit it.")
         return ""
     end
     if not ticket then

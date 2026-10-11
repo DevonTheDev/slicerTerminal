@@ -338,6 +338,19 @@ Derma focus/clicks and mixed-version multiplayer delivery still need a game chec
 ### Correct a saved console setup
 
 Look at one of your configured, idle consoles and type `!editConsole` in chat.
+You can also use `!editConsole 1` through `!editConsole 5` to edit that exact row
+from your latest `!listConsoles` or `!findConsoles` page, including filtered pages.
+The row command requires one space and one digit, with no trailing whitespace;
+other edit-like text stays ordinary chat. The row is private to you and lasts
+60 seconds from the listing. Opening an editor or locating a row does not extend
+or consume that time, and clearing the locator marker keeps the page available.
+Listing or searching again replaces the page; an invalid or empty request clears
+it. Unavailable rows ask you to list again and never select what you are looking
+at. Setup-needed or busy consoles must become configured and idle before editing.
+The saved row follows the same console even if its name or filter state changes.
+Listing expiry or replacement does not revoke an already-open editor; the normal
+creator, setup and reservation checks still apply when you save.
+
 The editor shows its saved name, filename and slice delay. Its title identifies
 the target as **Edit console #123 (entity 45)** using the server's current
 creation ID and entity index, so same-name copies and colliding creation IDs
@@ -751,6 +764,11 @@ These tests do **not** replace a Garry's Mod server/client smoke test. Rendering
 assets, physics/Use reach, engine networking and multiplayer timing are not
 emulated. Before a live rollout, use a test server to check:
 
+- List or search two same-name consoles, open row 2 with `!editConsole 2`, type a
+  draft, then repeat the row command and bare eye-trace command for that console.
+  Verify one form retains the draft, save it, and hack the renamed console using
+  its updated filename and delay. Relist or wait 60 seconds before saving an open
+  draft, and confirm unavailable rows never open the console in your eye trace
 - Spawn/configure one terminal of each type and complete their command flows
 - Rapidly submit login and each download before the first visible countdown
   update; try recalling/submitting return at download start. Confirm the input

@@ -524,6 +524,20 @@ end)
 
 -- Row numbers belong only to this player's last displayed page. Exact entity
 -- references, rather than wrapping IDs or names, retain their identity.
+-- Selection is shared by locating and editing; it grants no edit authority.
+function slicerListedConsole(ply, row)
+    if not IsValid(ply) or not ply:IsPlayer() or not ply:Alive() then
+        if ply ~= nil then consoleListings[ply] = nil end
+        return
+    end
+    if type(row) ~= "number" or row % 1 ~= 0 or row < 1 or row > 5 then return end
+    local listing = consoleListings[ply]
+    if listing and CurTime() >= listing.expires then consoleListings[ply], listing = nil, nil end
+    local console = listing and listing.rows[row]
+    if not IsValid(console) or console:GetClass() ~= "consoleent" or console.SlicerCreator ~= ply then return end
+    return console
+end
+
 hook.Add("PlayerSay", "slicerLocateConsole", function(ply, text)
     if text ~= "!locateConsole" and not text:find("^!locateConsole%s") then return end
     if not IsValid(ply) or not ply:IsPlayer() or not ply:Alive() then
@@ -541,10 +555,8 @@ hook.Add("PlayerSay", "slicerLocateConsole", function(ply, text)
         ply:ChatPrint("Usage: !locateConsole <row> (1-5 from your last !listConsoles or !findConsoles page), or !locateConsole clear.")
         return ""
     end
-    local listing = consoleListings[ply]
-    if listing and CurTime() >= listing.expires then consoleListings[ply], listing = nil, nil end
-    local console = listing and listing.rows[tonumber(row)]
-    if not IsValid(console) or console:GetClass() ~= "consoleent" or console.SlicerCreator ~= ply then
+    local console = slicerListedConsole(ply, tonumber(row))
+    if not console then
         ply:ChatPrint("That console row is unavailable or expired. Use !listConsoles or !findConsoles again, then !locateConsole <row>.")
         return ""
     end
