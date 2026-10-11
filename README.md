@@ -161,6 +161,24 @@ when filtering. Totals and pages count only matching consoles, and next/first-pa
 hints retain the state. Each request evaluates current entities afresh.
 `!listConsoles` and `!listConsoles <page>` keep showing the full inventory.
 
+To narrow a state by saved name, use
+`!listConsoles <page> <unlinked|unconfirmed> <text>`, for example
+`!listConsoles 1 unconfirmed reactor west`. Results must match both the current
+state and the literal name fragment. Use exactly one ASCII space before the
+page, state and first text byte; the remaining text follows the same 1–128-byte
+literal search rules below. The complete command is limited to 162 bytes.
+Numeric or state-prefixed text stays literal: `!listConsoles 1 unlinked 2 setup [a].%`
+searches for `2 setup [a].%` among unlinked consoles. `setup` cannot take a text
+tail because those consoles have no saved name; use `!listConsoles 1 setup`.
+
+Combined headers and counts describe only the intersected matches. No matches
+points to that state's full list; out-of-range pages retain the combined syntax.
+Next/first-page commands retain both the state and exact text, with no added
+punctuation. Copy the complete hint to repeat the search. Named but malformed
+configuration can still match `!findConsoles`, but cannot enter either combined
+tools state. Plain `!findConsoles` never treats any part of its text as a state:
+`!findConsoles 1 unlinked reactor` searches for the literal `unlinked reactor`.
+
 The list sorts by current creation ID, then entity index when IDs collide.
 Same-name consoles and colliding IDs remain separate entries. Both identifiers are
 transient: the list is a fresh snapshot on every request, so additions/removals
@@ -217,7 +235,7 @@ consoles from that page for 60 seconds; they are not creation IDs. A fresh list
 or search replaces those rows, and a malformed, empty or unavailable-page
 request clears them. Refresh the list or search if a row expires,
 its console is removed, or ownership changes. Death and disconnect clear the rows.
-Filtered pages use these same rows and expiry. Locating does not rerun a name
+State-only and combined name/state pages use these same rows and expiry. Locating does not rerun a name
 search or state filter: later renaming, setup or link changes leave an otherwise
 eligible live console as the same row, using its current name and position.
 Locating does not confirm that the previously displayed state still applies.

@@ -391,6 +391,11 @@ local function foldConsoleName(name)
     end))
 end
 
+local function validConsoleQuery(query)
+    return query and #query > 0 and #query <= 128 and query:sub(1, 1) ~= " " and query:sub(-1) ~= " "
+        and not query:find("[%z\1-\31\127]") and not query:find("\194[\128-\159]") and not query:find("\226\128[\168\169]")
+end
+
 local function matchesConsoleState(console, state)
     if state == "setup" then return console.SlicerInformation == nil end
     local information = normalizeSlicerInformation(console.SlicerInformation)
@@ -424,14 +429,17 @@ local function showConsolePage(ply, page, query, state)
     local pages = math.ceil(total / consolesPerPage)
     local messages = {}
     if total == 0 then
-        messages[1] = query and "No matching console names. Use !listConsoles for all your consoles, including those needing setup."
+        messages[1] = query and state and ("No matching console names in state '" .. state .. "'. Use !listConsoles 1 " .. state .. " for all consoles in that state.")
+            or query and "No matching console names. Use !listConsoles for all your consoles, including those needing setup."
             or state and ("You have no consoles matching state '" .. state .. "'.")
             or "You have no consoles."
     elseif page > pages then
-        messages[1] = query and ("Search page must be between 1 and " .. pages .. ". Use !findConsoles <page> <text>.")
+        messages[1] = query and state and ("Search page must be between 1 and " .. pages .. ". Use !listConsoles <page> " .. state .. " <text>.")
+            or query and ("Search page must be between 1 and " .. pages .. ". Use !findConsoles <page> <text>.")
             or ("Console page must be between 1 and " .. pages .. ". Use !listConsoles <page>" .. (state and " " .. state or "") .. ".")
     else
-        messages[1] = (query and "Your matching consoles: page " or state and ("Your consoles (" .. state .. "): page ")
+        messages[1] = (query and state and ("Your matching consoles (" .. state .. "): page ")
+            or query and "Your matching consoles: page " or state and ("Your consoles (" .. state .. "): page ")
             or "Your consoles: page ") .. page .. " of " .. pages
             .. " (" .. total .. (query and " matches" or " total") .. "). Locate: !locateConsole <row>."
         local first = (page - 1) * consolesPerPage + 1
@@ -443,10 +451,12 @@ local function showConsolePage(ply, page, query, state)
         end
         consoleListings[ply] = {rows = rows, expires = CurTime() + listingLifetime}
         if page < pages then
-            messages[#messages + 1] = query and ("Next page: !findConsoles " .. (page + 1) .. " " .. query)
+            messages[#messages + 1] = query and state and ("Next page: !listConsoles " .. (page + 1) .. " " .. state .. " " .. query)
+                or query and ("Next page: !findConsoles " .. (page + 1) .. " " .. query)
                 or ("Next page: !listConsoles " .. (page + 1) .. (state and " " .. state or "") .. ".")
         elseif page > 1 then
-            messages[#messages + 1] = query and ("First page: !findConsoles 1 " .. query)
+            messages[#messages + 1] = query and state and ("First page: !listConsoles 1 " .. state .. " " .. query)
+                or query and ("First page: !findConsoles 1 " .. query)
                 or state and ("First page: !listConsoles 1 " .. state .. ".") or "First page: !listConsoles."
         end
     end
@@ -460,21 +470,31 @@ hook.Add("PlayerSay", "slicerListConsoles", function(ply, text)
     if ply ~= nil then consoleListings[ply] = nil end
     if not IsValid(ply) or not ply:IsPlayer() or not ply:Alive() then return "" end
 
-    local page, state = 1
+    local page, state, query = 1
     if text ~= listConsolesCommand then
         -- Bound the whole command before extraction or conversion. Optional
         -- state names are exact lowercase words, with one ASCII space per gap.
-        local suffix = #text <= #listConsolesCommand + 20 and text:sub(#listConsolesCommand + 1) or ""
+        -- The longest combined form is 162 bytes, including a 128-byte query.
+        local suffix = #text <= 162 and text:sub(#listConsolesCommand + 1) or ""
         local digits = suffix:match("^ ([1-9][0-9]*)$")
         if not digits then digits, state = suffix:match("^ ([1-9][0-9]*) ([a-z]+)$") end
+        if not digits then digits, state, query = suffix:match("^ ([1-9][0-9]*) ([a-z]+) (.+)$") end
         if not digits or #digits > 7 or (state and state ~= "setup" and state ~= "unlinked" and state ~= "unconfirmed") then
             ply:ChatPrint("Usage: !listConsoles, !listConsoles <page>, or !listConsoles <page> <state> (1-7 digits, no leading zero; setup, unlinked, unconfirmed).")
+            return ""
+        end
+        if query and state == "setup" then
+            ply:ChatPrint("Usage: !listConsoles <page> setup. Setup consoles have no saved name to search.")
+            return ""
+        end
+        if query and not validConsoleQuery(query) then
+            ply:ChatPrint("Usage: !listConsoles <page> <unlinked|unconfirmed> <text> (1-7 page digits, no leading zero; 1-128 text bytes, no edge spaces or controls).")
             return ""
         end
         page = tonumber(digits)
     end
 
-    showConsolePage(ply, page, nil, state)
+    showConsolePage(ply, page, query, state)
     return ""
 end)
 
@@ -488,8 +508,7 @@ hook.Add("PlayerSay", "slicerFindConsoles", function(ply, text)
     -- unambiguous, with no quoting, escaping, wildcard or retained-query state.
     local page, query
     if #text <= 150 then page, query = text:match("^!findConsoles ([1-9][0-9]*) (.+)$") end
-    if not page or #page > 7 or #query > 128 or query:sub(1, 1) == " " or query:sub(-1) == " "
-        or query:find("[%z\1-\31\127]") or query:find("\194[\128-\159]") or query:find("\226\128[\168\169]") then
+    if not page or #page > 7 or not validConsoleQuery(query) then
         ply:ChatPrint("Usage: !findConsoles <page> <text> (1-7 page digits, no leading zero; 1-128 text bytes, no edge spaces or controls).")
         return ""
     end
