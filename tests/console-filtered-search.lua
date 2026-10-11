@@ -4,11 +4,13 @@ return function(gmod, test, equal)
     local function contains(text, part)
         assert(text:find(part, 1, true), "Missing '" .. part .. "' in " .. text)
     end
+    local link
     local function named(env, owner, name, state, folder)
         local ent = env.console(owner)
         assert(env.configure(owner, ent, folder or "tools"))
         ent.SlicerInformation.name = name or "target"
         if state == "unconfirmed" then ent.SlicerDoor = env.entity("func_door") end
+        if state == "linked" then link(env, owner, ent, "func_door") end
         return ent
     end
     local function say(env, owner, text) return env.fire("PlayerSay", owner, text) end
@@ -44,7 +46,7 @@ return function(gmod, test, equal)
         equal(packet.values[1], true); equal(packet.values[3].x, ent.position.x)
         return packet
     end
-    local function link(env, owner, ent, class)
+    link = function(env, owner, ent, class)
         local door = env.entity(class)
         owner.target = ent; equal(say(env, owner, "!setEntity"), "")
         owner.target = door; equal(say(env, owner, "!setEntity"), "")
@@ -56,8 +58,9 @@ return function(gmod, test, equal)
         local env = support.server(); local owner = env.player()
         local unlinked = named(env, owner, "reactor west")
         local unconfirmed = named(env, owner, "reactor west", "unconfirmed")
+        local linked = named(env, owner, "reactor west", "linked")
         named(env, owner, "unrelated"); named(env, owner, "unrelated", "unconfirmed")
-        for _, pair in ipairs({{"unlinked", unlinked}, {"unconfirmed", unconfirmed}}) do
+        for _, pair in ipairs({{"unlinked", unlinked}, {"unconfirmed", unconfirmed}, {"linked", linked}}) do
             local rows, messages = search(env, owner, pair[1], "REACTOR")
             equal(#rows, 1, "Combined name/state request must return its one intersected match")
             contains(messages[1], pair[1]); contains(messages[1], "1 matches")
@@ -110,6 +113,12 @@ return function(gmod, test, equal)
         for byte = 128, 159 do suffixes[#suffixes + 1] = " 1 unconfirmed a\194" .. string.char(byte) .. "b" end
         suffixes[#suffixes + 1] = " 1 unconfirmed a\226\128\168b"
         suffixes[#suffixes + 1] = " 1 unconfirmed a\226\128\169b"
+        -- Reuse the shared grammar matrix for the newly accepted state.
+        local existing = #suffixes
+        for i = 1, existing do
+            local linked = suffixes[i]:gsub("unlinked", "linked"):gsub("unconfirmed", "linked"):gsub("UNLINKED", "LINKED")
+            if linked ~= suffixes[i] then suffixes[#suffixes + 1] = linked end
+        end
         for _, suffix in ipairs(suffixes) do
             local rows, messages = request(env, owner, "!listConsoles" .. suffix)
             equal(#rows, 0); equal(#messages, 1); contains(messages[1], "Usage:")
@@ -150,7 +159,7 @@ return function(gmod, test, equal)
             function owner:GetEyeTrace() error("Ineligible caller traced") end
             function owner:GetActiveWeapon() error("Ineligible caller weapon read") end
             function env.ents.FindByClass() error("Ineligible caller enumerated") end
-            for _, text in ipairs({"!listConsoles 1 unlinked target", "!listConsoles 1 setup target", "!listConsoles 01 unconfirmed x"}) do
+            for _, text in ipairs({"!listConsoles 1 unlinked target", "!listConsoles 1 setup target", "!listConsoles 01 unconfirmed x", "!listConsoles 1 linked target"}) do
                 equal(say(env, actor, text), "")
             end
             owner.ChatPrint, owner.valid, owner.class, owner.alive = original, true, "player", true
@@ -158,7 +167,7 @@ return function(gmod, test, equal)
         end)
     end
 
-    for _, state in ipairs({"unlinked", "unconfirmed"}) do
+    for _, state in ipairs({"unlinked", "unconfirmed", "linked"}) do
         for _, count in ipairs({0, 1, 5, 6, 12}) do
             test(state .. " name search privately paginates " .. count .. " intersections with exact hints", function()
                 local env = support.server(); local owner, other = env.player(), env.player()
@@ -194,21 +203,23 @@ return function(gmod, test, equal)
         end
     end
 
-    test("combined 128-byte ASCII and multibyte queries accept the 162-byte command boundary", function()
-        local env = support.server(); local owner = env.player()
-        for _, name in ipairs({string.rep("a", 128), string.rep("é", 64)}) do
-            local first = named(env, owner, name, "unconfirmed")
-            for _ = 1, 5 do named(env, owner, name, "unconfirmed") end
-            local rows, messages = search(env, owner, "unconfirmed", name)
-            equal(#rows, 5); contains(rows[1], "'" .. name .. "'")
-            equal(messages[#messages], "Next page: !listConsoles 2 unconfirmed " .. name)
-            locate(env, owner, first)
-            local command = "!listConsoles 9999999 unconfirmed " .. name
-            equal(#command, 162) -- The maximum page, state and query fill the ceiling exactly.
-            rows, messages = request(env, owner, command)
-            equal(#rows, 0); contains(messages[1], "between 1 and 2")
-        end
-    end)
+    for _, state in ipairs({"unconfirmed", "linked"}) do
+        test(state .. " combined 128-byte ASCII and multibyte queries accept the command boundary", function()
+            local env = support.server(); local owner = env.player()
+            for _, name in ipairs({string.rep("a", 128), string.rep("é", 64)}) do
+                local first = named(env, owner, name, state)
+                for _ = 1, 5 do named(env, owner, name, state) end
+                local rows, messages = search(env, owner, state, name)
+                equal(#rows, 5); contains(rows[1], "'" .. name .. "'")
+                equal(messages[#messages], "Next page: !listConsoles 2 " .. state .. " " .. name)
+                locate(env, owner, first)
+                local command = "!listConsoles 9999999 " .. state .. " " .. name
+                equal(#command, state == "unconfirmed" and 162 or 157) -- Longest state fills the ceiling.
+                rows, messages = request(env, owner, command)
+                equal(#rows, 0); contains(messages[1], "between 1 and 2")
+            end
+        end)
+    end
 
     for _, class in ipairs({"func_door", "func_door_rotating"}) do
         test("combined AND filters preserve all existing " .. class .. " state predicates", function()
@@ -232,6 +243,8 @@ return function(gmod, test, equal)
             for row, ent in ipairs({removed, unsupported, absent, mismatch, falseDoor}) do locate(env, owner, ent, row) end
             contains(rows[1], "previous door is no longer available")
             contains(rows[2], "no registered link can be confirmed")
+            rows = search(env, owner, "linked", "TARGET"); equal(#rows, 1)
+            contains(rows[1], "registered link to " .. class); locate(env, owner, registered)
             equal(#door.inputs, 1); equal(#old.inputs, 1); equal(registered.SlicerDoor, door)
         end)
     end
@@ -261,6 +274,9 @@ return function(gmod, test, equal)
         equal(#search(env, owner, "unlinked", "target"), 3)
         locate(env, owner, b); locate(env, owner, c, 2); locate(env, owner, a, 3)
         equal(#search(env, owner, "unconfirmed", "target"), 0)
+        for _, ent in ipairs({a, b, c}) do link(env, owner, ent, "func_door_rotating") end
+        equal(#search(env, owner, "linked", "TARGET"), 3)
+        locate(env, owner, b); locate(env, owner, c, 2); locate(env, owner, a, 3)
         for index, ent in ipairs({a, foreign, c, removed, ownerless, wrong, b}) do equal(all[index], ent) end
     end)
 
@@ -318,6 +334,24 @@ return function(gmod, test, equal)
         locate(env, owner, ent); equal(#door.inputs, 1)
         env.now = 67; locate(env, owner)
     end)
+
+    for _, query in ipairs({"", " TARGET [a].%"}) do
+        test("linked rows retain exact identity after unlink without renewing their lease" .. query, function()
+            local env = support.server(); local owner = env.player()
+            local ent = named(env, owner, "target [a].%", "linked")
+            local door = ent.SlicerDoor
+            env.now = 7; local rows = request(env, owner, "!listConsoles 1 linked" .. query)
+            equal(#rows, 1); locate(env, owner, ent)
+            env.now = 20; owner.target = ent; say(env, owner, "!unlinkConsole")
+            equal(ent.SlicerDoor, nil); equal(#door.inputs, 2)
+            local replacement = named(env, owner, "target [a].%", "linked"); replacement.id = ent.id
+            ent.SlicerInformation.name = "renamed"
+            function env.ents.FindByClass() error("Locate reran the linked filter") end
+            env.now = 66.999; contains(locate(env, owner, ent).values[2], "renamed")
+            env.now = 67; locate(env, owner)
+            equal(#door.inputs, 2); equal(#replacement.SlicerDoor.inputs, 1)
+        end)
+    end
 
     for _, newer in ipairs({"!listConsoles", "!findConsoles 1 renamed", "!listConsoles 1 unlinked",
         "!listConsoles 1 unlinked renamed", "!listConsoles 1 setup x", "!listConsoles 1 unlinked missing"}) do

@@ -404,6 +404,9 @@ local function matchesConsoleState(console, state)
     if not information or information.fileType ~= "tools" then return false end
     local door = console.SlicerDoor
     if state == "unlinked" then return door == nil end
+    if state == "linked" then
+        return IsValid(door) and supportedDoors[door:GetClass()] and linkedDoors[door] == console
+    end
     return door ~= nil and (not IsValid(door) or not supportedDoors[door:GetClass()] or linkedDoors[door] ~= console)
 end
 
@@ -481,8 +484,8 @@ hook.Add("PlayerSay", "slicerListConsoles", function(ply, text)
         local digits = suffix:match("^ ([1-9][0-9]*)$")
         if not digits then digits, state = suffix:match("^ ([1-9][0-9]*) ([a-z]+)$") end
         if not digits then digits, state, query = suffix:match("^ ([1-9][0-9]*) ([a-z]+) (.+)$") end
-        if not digits or #digits > 7 or (state and state ~= "setup" and state ~= "unlinked" and state ~= "unconfirmed") then
-            ply:ChatPrint("Usage: !listConsoles, !listConsoles <page>, or !listConsoles <page> <state> (1-7 digits, no leading zero; setup, unlinked, unconfirmed).")
+        if not digits or #digits > 7 or (state and state ~= "setup" and state ~= "unlinked" and state ~= "unconfirmed" and state ~= "linked") then
+            ply:ChatPrint("Usage: !listConsoles, !listConsoles <page>, or !listConsoles <page> <state> (1-7 digits, no leading zero; setup, unlinked, unconfirmed, linked).")
             return ""
         end
         if query and state == "setup" then
@@ -490,7 +493,7 @@ hook.Add("PlayerSay", "slicerListConsoles", function(ply, text)
             return ""
         end
         if query and not validConsoleQuery(query) then
-            ply:ChatPrint("Usage: !listConsoles <page> <unlinked|unconfirmed> <text> (1-7 page digits, no leading zero; 1-128 text bytes, no edge spaces or controls).")
+            ply:ChatPrint("Usage: !listConsoles <page> <unlinked|unconfirmed|linked> <text> (1-7 page digits, no leading zero; 1-128 text bytes, no edge spaces or controls).")
             return ""
         end
         page = tonumber(digits)

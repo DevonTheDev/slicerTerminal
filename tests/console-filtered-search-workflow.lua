@@ -48,6 +48,12 @@ return function(gmod, test, equal)
         recovery.SlicerInformation.name = "reactor west"; selected.SlicerInformation.name = "reactor east"
         local irrelevant = server.console(owner); assert(server.configure(owner, irrelevant, "tools", 2))
         irrelevant.SlicerInformation.name = "unrelated"; irrelevant.SlicerDoor = server.entity("func_door")
+        local registered = server.console(owner); assert(server.configure(owner, registered, "tools", 2))
+        registered.SlicerInformation.name = "reactor linked"
+        owner.target = registered; server.fire("PlayerSay", owner, "!setEntity")
+        local registeredDoor = server.entity("func_door")
+        owner.target = registeredDoor; server.fire("PlayerSay", owner, "!setEntity")
+        local registeredInfo = registered.SlicerInformation
         owner.SlicerPendingConsole = selected
         owner.target = recovery; server.fire("PlayerSay", owner, "!setEntity")
         local removedDoor = server.entity("func_door_rotating")
@@ -77,6 +83,8 @@ return function(gmod, test, equal)
         equal(#filter(server, owner, "setup"), 1)
         locate(server, client, owner, deferred)
         equal(#filter(server, owner, "unconfirmed", "reactor west"), 1); locate(server, client, owner, recovery)
+        equal(#filter(server, owner, "linked"), 1); locate(server, client, owner, registered)
+        equal(#filter(server, owner, "linked", "REACTOR LINKED"), 1); locate(server, client, owner, registered)
         equal(#filter(server, owner, "unlinked", "reactor east"), 1); locate(server, client, owner, selected)
         equal(owner.SlicerPendingConsole, selected); equal(editable.SlicerInformation, info)
         equal(server.returnSpawnedEntities(), registry); equal(server.slicerSetupEditSerial, serial)
@@ -85,6 +93,8 @@ return function(gmod, test, equal)
         equal(client.lastMessage("SlicerSetupEditSave"), editSave); equal(client.lastMessage("AdminFinishedCreation"), setupSave)
         equal(#hacker.chats, hackerChats); equal(hackClient.timers.AccessDelay, login)
         equal(active.SlicerInformation.inUse, true); equal(recovery.SlicerDoor, removedDoor)
+        equal(registered.SlicerInformation, registeredInfo); equal(registered.SlicerDoor, registeredDoor)
+        equal(#registeredDoor.inputs, 1); equal(registeredDoor.inputs[1], "Lock")
         equal(#removedDoor.inputs, 1); equal(removedDoor.inputs[1], "Lock")
         owner.GetEyeTrace = function(self) return {Entity = self.target} end
         owner.GetActiveWeapon = function(self) return self.weapon end

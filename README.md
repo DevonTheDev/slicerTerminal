@@ -152,6 +152,8 @@ To show one current state, use `!listConsoles <page> <state>`, for example
 - `unlinked`: valid tools configuration with no door pointer, including deliberately unlinked consoles
 - `unconfirmed`: valid tools configuration with a nonnil door pointer whose entity
   is unavailable, class is unsupported, or registered association does not match
+- `linked`: valid tools configuration with a live supported door registered to
+  that exact console in this server session; this does not report its physical lock state
 
 These are inventory categories, not a diagnosis or automatic repair. The existing
 row descriptions still distinguish an unavailable former door from an unconfirmed
@@ -164,8 +166,8 @@ hints retain the state. Each request evaluates current entities afresh.
 `!listConsoles` and `!listConsoles <page>` keep showing the full inventory.
 
 To narrow a state by saved name, use
-`!listConsoles <page> <unlinked|unconfirmed> <text>`, for example
-`!listConsoles 1 unconfirmed reactor west`. Results must match both the current
+`!listConsoles <page> <unlinked|unconfirmed|linked> <text>`, for example
+`!listConsoles 1 linked reactor west`. Results must match both the current
 state and the literal name fragment. Use exactly one ASCII space before the
 page, state and first text byte; the remaining text follows the same 1–128-byte
 literal search rules below. The complete command is limited to 162 bytes.
@@ -177,7 +179,7 @@ Combined headers and counts describe only the intersected matches. No matches
 points to that state's full list; out-of-range pages retain the combined syntax.
 Next/first-page commands retain both the state and exact text, with no added
 punctuation. Copy the complete hint to repeat the search. Named but malformed
-configuration can still match `!findConsoles`, but cannot enter either combined
+configuration can still match `!findConsoles`, but cannot enter any combined
 tools state. Plain `!findConsoles` never treats any part of its text as a state:
 `!findConsoles 1 unlinked reactor` searches for the literal `unlinked reactor`.
 
@@ -667,9 +669,10 @@ state. The doubles establish callback and transport intent, not native chat
 delivery or compatibility with other chat addons.
 
 State-filter tests cover strict bounded grammar, exact nil versus malformed
-configuration, both supported door classes, deliberate unlinking and unconfirmed
-associations. They verify ownership before private reads, unregistered copies,
-same-name/ID ordering, filtered totals, shared row replacement/expiry and nested
+configuration, both supported door classes, deliberate unlinking, unconfirmed
+associations and exact registered `linked` associations. They verify ownership
+before private reads, unregistered copies, same-name/ID ordering, filtered totals,
+shared row replacement/expiry and nested
 requests during prepared output. A real-handler workflow locates filtered rows,
 completes deferred setup and recovers a removed link while preserving unrelated
 acknowledgements, selection and an active hack's original deadline. Native chat,
@@ -774,9 +777,10 @@ emulated. Before a live rollout, use a test server to check:
   commands. Check private replies, full-length ASCII/multibyte names, deferred
   setup and same-name copies. List while setup/edit forms or a live hack are
   open; verify pending choices, forms, original deadlines and doors are intact
-- Use `!listConsoles 1 setup`, `!listConsoles 1 unlinked` and
-  `!listConsoles 1 unconfirmed` with deferred/pasted consoles, deliberate
-  unlinking and unavailable or unregistered links for both door classes. Check
+- Use `!listConsoles 1 setup`, `!listConsoles 1 unlinked`,
+  `!listConsoles 1 unconfirmed` and `!listConsoles 1 linked` with deferred/pasted
+  consoles, deliberate unlinking, unavailable or unregistered links, and exact
+  registered links for both door classes. Check
   private totals and complete page hints. Locate a filtered row, then configure,
   rename or relink its console before locating the same row again; check that
   the exact live console remains locatable until expiry without promising its

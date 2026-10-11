@@ -1,7 +1,7 @@
 -- Exercise actual PlayerSay callbacks and exact-reference location packets.
 return function(gmod, test, equal)
     local support = dofile("tests/console-locator-support.lua")(gmod)
-    local states = {"setup", "unlinked", "unconfirmed"}
+    local states = {"setup", "unlinked", "unconfirmed", "linked"}
     local function contains(text, part)
         assert(text:find(part, 1, true), "Missing '" .. part .. "' in " .. text)
     end
@@ -22,6 +22,7 @@ return function(gmod, test, equal)
         if state == "setup" then return env.console(owner) end
         local ent = configured(env, owner)
         if state == "unconfirmed" then ent.SlicerDoor = env.entity("func_door") end
+        if state == "linked" then link(env, owner, ent) end
         return ent
     end
     local function request(env, owner, text)
@@ -74,7 +75,8 @@ return function(gmod, test, equal)
             " 1 SETUP", " 1 Setup", " 1 unknown", " 1 set", " 1 unconfirmedx", " 10000000 setup",
             " 1 ", "\t1 setup", "\n1 setup", "\r1 setup", "\v1 setup", "\f1 setup", " 1\tsetup", " 1\nsetup",
             " 1 setup\0", " 1 setup\127", " 1 setup\194\133", " 1 setup\226\128\168", " 1 setup\226\128\169",
-            " " .. string.rep("9", 200000) .. " setup", " 1 " .. string.rep("s", 200000)}
+            " " .. string.rep("9", 200000) .. " setup", " 1 " .. string.rep("s", 200000),
+            " linked", " 01 linked", " 10000000 linked", " 1 LINKED", " 1 Linked", " 1 linkedx", " 1  linked", " 1 linked "}
         local enumerate, convert = env.ents.FindByClass, env.tonumber
         for _, suffix in ipairs(suffixes) do
             request(env, owner, "!listConsoles")
@@ -155,6 +157,9 @@ return function(gmod, test, equal)
             local absent = configured(env, owner); absent.SlicerDoor = env.entity(class)
             local registered = configured(env, owner); local door = link(env, owner, registered, class)
             local mismatch = configured(env, owner); mismatch.SlicerDoor = door
+            function door:Fire() error("Listing sent a door input") end
+            function door:GetInternalVariable() error("Listing inspected physical door state") end
+            function door:GetSaveTable() error("Listing inspected physical door state") end
             for _, folder in ipairs({"data", "server"}) do
                 local data = configured(env, owner, folder); data.SlicerDoor = old
             end
@@ -167,10 +172,36 @@ return function(gmod, test, equal)
                 locate(env, owner, ent, row)
             end
             equal(#filtered(env, owner, "setup"), 0)
+            rows = filtered(env, owner, "linked"); equal(#rows, 1, "Linked filter must return its exact registered console")
+            contains(rows[1], "registered link to " .. class); locate(env, owner, registered)
+            door.class = "prop_physics"; equal(#filtered(env, owner, "linked"), 0)
+            door.class, door.valid = class, false; equal(#filtered(env, owner, "linked"), 0)
+            door.valid = true
             equal(registered.SlicerDoor, door); equal(#door.inputs, 1); equal(#old.inputs, 1)
             equal(#relinquished.inputs, 2)
         end)
     end
+
+    test("linked requires normalized tools configuration even when the exact door remains registered", function()
+        local env = support.server(); local owner = env.player()
+        local ent = configured(env, owner); local door = link(env, owner, ent)
+        local information = ent.SlicerInformation
+        for _, value in ipairs({false, 0, "tools", {}, {fileType = "tools"},
+            {name = "bad", fileName = "file", fileType = "tools", delay = 0}}) do
+            ent.SlicerInformation = value
+            equal(#filtered(env, owner, "linked"), 0)
+            equal(ent.SlicerInformation, value, "Listing rewrote malformed configuration")
+        end
+        ent.SlicerInformation = nil; equal(#filtered(env, owner, "linked"), 0)
+        ent.SlicerInformation = information
+        for _, folder in ipairs({"data", "server"}) do
+            information.fileType = folder; equal(#filtered(env, owner, "linked"), 0)
+        end
+        information.fileType, information.name = "tools", " Mixed Case "
+        equal(#filtered(env, owner, "linked"), 1); locate(env, owner, ent)
+        equal(information.name, " Mixed Case ", "Listing normalized the saved configuration in place")
+        equal(ent.SlicerInformation, information); equal(ent.SlicerDoor, door); equal(#door.inputs, 1)
+    end)
 
     for _, state in ipairs(states) do
         for _, count in ipairs({0, 1, 5, 6, 12}) do
@@ -187,7 +218,9 @@ return function(gmod, test, equal)
                     local rows, messages = filtered(env, owner, state, page)
                     equal(#rows, math.min(5, math.max(0, count - (page - 1) * 5)))
                     contains(messages[1], state)
-                    if count == 0 then equal(#messages, 1); locate(env, owner)
+                    if count == 0 then
+                        equal(#messages, 1); equal(messages[1], "You have no consoles matching state '" .. state .. "'.")
+                        locate(env, owner)
                     else
                         contains(messages[1], "page " .. page .. " of " .. pages); contains(messages[1], count .. " total")
                         for row = 1, #rows do locate(env, owner, entities[(page - 1) * 5 + row], row) end
@@ -218,6 +251,9 @@ return function(gmod, test, equal)
         equal(#filtered(env, owner, "unlinked"), 3)
         locate(env, owner, b, 1); locate(env, owner, c, 2); locate(env, owner, a, 3)
         for _, state in ipairs({"setup", "unconfirmed"}) do equal(#filtered(env, owner, state), 0) end
+        for _, ent in ipairs({a, b, c}) do link(env, owner, ent) end
+        equal(#filtered(env, owner, "linked"), 3)
+        locate(env, owner, b, 1); locate(env, owner, c, 2); locate(env, owner, a, 3)
         for index, ent in ipairs({a, foreign, c, removed, ownerless, wrong, b}) do equal(all[index], ent) end
     end)
 
