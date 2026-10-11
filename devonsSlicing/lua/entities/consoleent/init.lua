@@ -210,6 +210,19 @@ end)
 -- The legacy packet is unnecessary and must not select another player's door.
 net.Receive("ServerWaitingForEntity", function() end)
 
+hook.Add("PlayerSay", "slicerCancelLink", function(ply, text)
+    if text ~= "!cancelLink" then return end
+    if not IsValid(ply) or not ply:IsPlayer() or not ply:Alive() then return "" end
+    local message = ply.SlicerPendingConsole ~= nil
+        and "Pending door-link selection canceled. Use !setEntity on one of your unlinked tools consoles to select again."
+        or "You have no pending door-link selection."
+    -- Clear only the caller's choice, even if stale. Feedback can reenter the
+    -- selector, so commit before ChatPrint and leave any newer selection alone.
+    ply.SlicerPendingConsole = nil
+    ply:ChatPrint(message)
+    return ""
+end)
+
 hook.Add("PlayerSay", "doesThePlayerSetAnEntity", function(ply, text)
     if text ~= "!setEntity" then return end
     local target = ply:GetEyeTrace().Entity
@@ -219,7 +232,7 @@ hook.Add("PlayerSay", "doesThePlayerSetAnEntity", function(ply, text)
             return
         end
         ply.SlicerPendingConsole = target
-        ply:ChatPrint("Selected '" .. target.SlicerInformation.name .. "'. Look at a " .. doorClassNames .. " and type !setEntity to link it.")
+        ply:ChatPrint("Selected '" .. target.SlicerInformation.name .. "'. Look at a " .. doorClassNames .. " and use !setEntity to link, or !cancelLink to cancel.")
         return ""
     end
 

@@ -26,14 +26,31 @@ and terminal-driven downloads or door unlocking.
    terminal after you set up or remove a newer one. Selection requires a
    terminal that is **unlinked** and not in use. A prior link remains ineligible
    after its door is removed until you explicitly clear it with `!resetLink`.
-   Invalid choices preserve
-   your pending selection so you can retry. Each terminal has its own door;
+   Invalid choices preserve your pending selection so you can retry. Type
+   `!cancelLink` to clear your pending choice; select a console again before
+   linking a door. Each terminal has its own door;
    a door cannot be attached to two live terminals. Using an unlinked terminal
    only gives guidance and does not select it.
 4. Equip **Devons Hacking Tool** and use the console. Primary and secondary
    attack are disabled; right-click must not fire the inherited base weapon. Its
    callable `ShouldDropOnDie` hook returns false, overriding the base weapon
    policy without replacing the method with a boolean.
+
+### Cancel a pending door selection
+
+Type exactly `!cancelLink` in chat to clear your own pending door-link selection.
+The private reply confirms cancellation or explains that no selection is pending.
+You must be a living player, but need no eye target or hacking tool. This also
+clears a stale choice if its console was removed, changed owner or became busy.
+To resume, look at your configured, unlinked tools console and type `!setEntity`,
+then look at its intended door and type `!setEntity` again.
+
+Cancellation only clears your pending choice. It keeps saved door links and
+locks, other players' selections, active hacks and their deadlines, setup/edit
+forms, and console listing/location leases intact. Use `!unlinkConsole` for a
+live door assignment or `!resetLink` for a removed door through their separate
+creator-only workflows below. Case changes, extra arguments and whitespace are
+not accepted as `!cancelLink`.
 
 ### Link sliding or rotating brush doors
 

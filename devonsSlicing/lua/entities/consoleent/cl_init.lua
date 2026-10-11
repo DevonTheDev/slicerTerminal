@@ -649,7 +649,7 @@ net.Receive("PlayerSpawnedConsole", function()
                     -- Two messages preserve the full name within ChatPrint's 255-byte limit.
                     local displayName = result.name:gsub("[%z\1-\31\127]", " ")
                     callingPlayer:ChatPrint('Setup accepted for console "' .. displayName .. '". Look at that console and type !setEntity first.')
-                    callingPlayer:ChatPrint("Then look at its intended door and type !setEntity to link it.")
+                    callingPlayer:ChatPrint("Then look at its intended door and type !setEntity to link it, or type !cancelLink to cancel your selection.")
                 end
             elseif result.ok == false then
                 if type(result.message) ~= "string" or #result.message == 0 or #result.message > 256 then return end
