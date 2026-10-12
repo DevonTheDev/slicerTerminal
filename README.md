@@ -246,12 +246,24 @@ inventory of your own consoles. This includes setup-needed, data, server, tools
 and currently reserved consoles. You must be a living player; no tool or eye
 trace is needed, and being an admin does not grant access to another creator's
 consoles. The page uses the same one-space, 1–7 ASCII digits, no-leading-zero
-rules as the full inventory. Name queries and state arguments are not supported.
+rules as the full inventory. To narrow proximity to a current state, use exactly
+`!nearConsoles <page> <state>`, for example `!nearConsoles 1 unlinked`. The state
+must be exactly `setup`, `unlinked`, `unconfirmed`, `linked` or `reserved`, with
+one ASCII space before the page and state. State requires an explicit page;
+name queries and any extra text are not supported.
 Malformed recognized arguments get private guidance; command near matches stay
 ordinary chat.
 
+State meanings are the same as `!listConsoles`: `setup` requires absent saved
+configuration, the three link states require valid tools configuration, and
+`reserved` reflects a server-owned active session, independently of a legacy
+busy flag. Filtering happens before distance sampling and pagination. The
+header names the requested state and counts only matching consoles; empty and
+out-of-range replies describe that filtered set. Next/first-page and retry
+guidance retain the state. Link descriptions do not assert a physical lock state.
+
 The header identifies a nearest-first request snapshot. The server samples your
-position once and each owned console's position once, then sorts by 3D
+position once and each matching owned console's position once, then sorts by 3D
 straight-line distance. This is geometric proximity, not a pathfinding or travel
 distance. Equal distances use current creation ID, then entity index. Consoles
 with unavailable/nonfinite positions or overflowing squared distances remain
@@ -264,8 +276,10 @@ Use the reply's `!nearConsoles` next/first-page hint to request another page.
 Every request samples positions again, so movement can shift pages. Previously
 printed rows keep their exact console references for 60 seconds until another
 catalogue request replaces them; locating, editing and selecting those rows use
-the existing creator and eligibility checks. Malformed, empty or out-of-range
-requests clear the previous page. Listing changes no saved configuration, doors,
+the existing creator and eligibility checks. A console changing state does not
+remap an already printed row or bypass a later action's eligibility checks.
+Malformed, empty or out-of-range requests clear the previous page. Listing changes
+no saved configuration, doors,
 pending selection, setup/edit records, active hacks, deadlines or locator marker.
 The default `!listConsoles` and `!findConsoles` ordering and replies stay unchanged.
 
@@ -841,8 +855,12 @@ position samples, deterministic ties, unavailable origins/console coordinates,
 overflow, private ownership, pagination after movement, and exact-reference row
 actions with the shared 60-second lease. They check reentrant listing replacement,
 inspection byte budgets, state preservation and exact default list/search replies
-without position calls. These checks ran on texlua's Lua 5.3; native engine
-vectors, movement and chat behavior still need an in-game smoke check.
+without position calls. Nearest-state tests combine all five existing predicates
+with filtering before pagination, strict syntax, retained hints, snapshot ordering,
+and existing setup/edit/link row authority. The nearest-state change and affected
+regressions ran on the installed Lua 5.4 C-API runner with the unchanged GLua
+translator; native engine vectors, movement and chat behavior still need an
+in-game smoke check.
 
 Console-search tests exercise actual PlayerSay callbacks for byte limits,
 literal ASCII folding, Unicode distinctions, private ownership filtering,
@@ -986,6 +1004,10 @@ emulated. Before a live rollout, use a test server to check:
 - Place owned consoles at different heights and distances, then use
   `!nearConsoles` and its page hints. Move before requesting another page and
   check the snapshot order, private replies and exact locate/edit/select rows
+  Repeat with `!nearConsoles 1 setup`, `unlinked`, `unconfirmed`, `linked` and
+  `reserved`; check filtered counts and state-preserving page hints. Change a
+  listed console's state and verify the old row retains that exact console while
+  actions enforce its current eligibility
 - With more than five owned consoles, use `!listConsoles` and its next-page
   commands. Check private replies, full-length ASCII/multibyte names, deferred
   setup and same-name copies. List while setup/edit forms or a live hack are

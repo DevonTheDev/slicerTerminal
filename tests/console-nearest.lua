@@ -266,7 +266,7 @@ return function(gmod, test, equal)
         function env.ents.FindByClass() error("Malformed nearest request enumerated") end
         function owner:GetPos() error("Malformed nearest request sampled") end
         function env.tonumber() error("Malformed nearest request converted") end
-        for _, suffix in ipairs({" ", " 0", " 01", " -1", " +1", " 1.0", " 1e1", " 1 ", " 1 2", "  1", " 10000000", " ١", "\t1", "\n1", "\r1", "\v1", "\f1", " 1 setup", " 1 reactor", " " .. string.rep("9", 200000)}) do
+        for _, suffix in ipairs({" ", " 0", " 01", " -1", " +1", " 1.0", " 1e1", " 1 ", " 1 2", "  1", " 10000000", " ١", "\t1", "\n1", "\r1", "\v1", "\f1", " 1 setup extra", " 1 reactor", " " .. string.rep("9", 200000)}) do
             local messages, rows = listing(env, owner, "!nearConsoles" .. suffix)
             equal(#messages, 1); equal(#rows, 0); contains(messages[1], "Usage:"); contains(messages[1], "1-7"); contains(messages[1], "no leading zero")
             equal(env.slicerListedConsole(owner, 1), nil)

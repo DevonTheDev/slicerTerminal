@@ -506,12 +506,12 @@ local function showConsolePage(ply, page, query, state, origin)
             or state and ("You have no consoles matching state '" .. state .. "'.")
             or "You have no consoles."
     elseif page > pages then
-        messages[1] = origin and ("Console page must be between 1 and " .. pages .. ". Use !nearConsoles <page>.")
+        messages[1] = origin and ("Console page must be between 1 and " .. pages .. ". Use !nearConsoles <page>" .. (state and " " .. state or "") .. ".")
             or query and state and ("Search page must be between 1 and " .. pages .. ". Use !listConsoles <page> " .. state .. " <text>.")
             or query and ("Search page must be between 1 and " .. pages .. ". Use !findConsoles <page> <text>.")
             or ("Console page must be between 1 and " .. pages .. ". Use !listConsoles <page>" .. (state and " " .. state or "") .. ".")
     else
-        messages[1] = (origin and "Your consoles (nearest-first request snapshot): page "
+        messages[1] = (origin and ("Your consoles (nearest-first request snapshot" .. (state and "; " .. state or "") .. "): page ")
             or query and state and ("Your matching consoles (" .. state .. "): page ")
             or query and "Your matching consoles: page " or state and ("Your consoles (" .. state .. "): page ")
             or "Your consoles: page ") .. page .. " of " .. pages
@@ -525,12 +525,12 @@ local function showConsolePage(ply, page, query, state, origin)
         end
         consoleListings[ply] = {rows = rows, expires = CurTime() + listingLifetime}
         if page < pages then
-            messages[#messages + 1] = origin and ("Next page: !nearConsoles " .. (page + 1) .. ".")
+            messages[#messages + 1] = origin and ("Next page: !nearConsoles " .. (page + 1) .. (state and " " .. state or "") .. ".")
                 or query and state and ("Next page: !listConsoles " .. (page + 1) .. " " .. state .. " " .. query)
                 or query and ("Next page: !findConsoles " .. (page + 1) .. " " .. query)
                 or ("Next page: !listConsoles " .. (page + 1) .. (state and " " .. state or "") .. ".")
         elseif page > 1 then
-            messages[#messages + 1] = origin and "First page: !nearConsoles."
+            messages[#messages + 1] = origin and ("First page: !nearConsoles" .. (state and " 1 " .. state or "") .. ".")
                 or query and state and ("First page: !listConsoles 1 " .. state .. " " .. query)
                 or query and ("First page: !findConsoles 1 " .. query)
                 or state and ("First page: !listConsoles 1 " .. state .. ".") or "First page: !listConsoles."
@@ -597,21 +597,25 @@ hook.Add("PlayerSay", "slicerNearConsoles", function(ply, text)
     if ply ~= nil then consoleListings[ply] = nil end
     if not IsValid(ply) or not ply:IsPlayer() or not ply:Alive() then return "" end
 
-    local page = 1
+    local page, state = 1
     if text ~= nearConsolesCommand then
-        local digits = #text <= #nearConsolesCommand + 8 and text:match("^!nearConsoles ([1-9][0-9]*)$")
-        if not digits or #digits > 7 then
-            ply:ChatPrint("Usage: !nearConsoles or !nearConsoles <page> (1-7 digits, no leading zero).")
+        -- Bound before extraction/conversion; state is an exact lowercase word,
+        -- not a name query. The longest suffix is seven digits + unconfirmed.
+        local suffix = #text <= #nearConsolesCommand + 20 and text:sub(#nearConsolesCommand + 1) or ""
+        local digits = suffix:match("^ ([1-9][0-9]*)$")
+        if not digits then digits, state = suffix:match("^ ([1-9][0-9]*) ([a-z]+)$") end
+        if not digits or #digits > 7 or (state and state ~= "setup" and state ~= "unlinked" and state ~= "unconfirmed" and state ~= "linked" and state ~= "reserved") then
+            ply:ChatPrint("Usage: !nearConsoles, !nearConsoles <page>, or !nearConsoles <page> <state> (1-7 digits, no leading zero; setup, unlinked, unconfirmed, linked, reserved).")
             return ""
         end
         page = tonumber(digits)
     end
     local origin = consolePositionSnapshot(ply)
     if not origin then
-        ply:ChatPrint("Your position is unavailable. Try !nearConsoles again.")
+        ply:ChatPrint("Your position is unavailable. Try !nearConsoles" .. (state and " " .. page .. " " .. state or "") .. " again.")
         return ""
     end
-    showConsolePage(ply, page, nil, nil, origin)
+    showConsolePage(ply, page, nil, state, origin)
     return ""
 end)
 
