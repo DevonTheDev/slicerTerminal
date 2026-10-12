@@ -204,8 +204,62 @@ net.Receive("playerQuitConsole", function(_, ply)
     releaseSession(ply, false)
 end)
 
--- A lost terminal page must not strand its player's server reservation.
+-- Static, requester-private help needs no game-state reads or live authority.
+-- Keep it in the existing hook; every other command retains its own checks.
+local slicerHelp = {
+    ["!slicerHelp"] = {
+        "Slicer chat help: !slicerHelp browse | !slicerHelp setup | !slicerHelp links | !slicerHelp hacking",
+        "Help is available alive or dead. It changes nothing; each action keeps its living-player, creator and tool requirements.",
+        "Use exact command spelling and one ASCII space before a lowercase topic. In a terminal, Commands (/help) shows that screen's commands.",
+    },
+    ["!slicerHelp browse"] = {
+        "Browse your own consoles while alive; these commands need no hacking tool or eye target.",
+        "!listConsoles [<page> [<state>]]: list; !nearConsoles [<page> [<state>]]: nearest first.",
+        "!findConsoles <page> <text>: search saved names literally (ASCII case-insensitive).",
+        "!listConsoles <page> <state> <text>: combine state and name; setup does not accept text.",
+        "States: setup, unlinked, unconfirmed, linked, reserved. Pages: 1-7 digits, no leading zero.",
+        "Text: 1-128 bytes, no edge spaces or controls. Use one ASCII space between arguments.",
+        "!locateConsole <row> marks a row; !locateConsole clear hides your marker.",
+        "Rows 1-5 mean exact entities on your last list/find/near page for up to 60 seconds; row actions do not renew that deadline.",
+        "A new list/find/near request replaces the page; malformed or empty requests clear its rows. Current ownership and eligibility still apply.",
+    },
+    ["!slicerHelp setup"] = {
+        "Setup/edit require the living console creator. Use your unconfigured console to open setup without a hacking tool.",
+        "!setupConsole <row> opens an unconfigured, unreserved listed console with a unique runtime name among your consoles.",
+        "!editConsole or !editConsole <row> opens a configured, idle console for name, delay and filename edits.",
+        "Bare !editConsole uses your eye target; row commands use your last list/find/near page (1-5, up to 60 seconds).",
+        "Opening a form does not save it. Submit with Done or Save changes; accepted tools setup selects that console for linking.",
+    },
+    ["!slicerHelp links"] = {
+        "Console selection, inspection and link changes remain creator-only. Row selection, cancel, inspect, reset and unlink require a living player.",
+        "!setEntity: look at your configured, idle, unlinked tools console to select it, then at a door to link.",
+        "!setEntity <row> selects an eligible console from your last list/find/near page (1-5, up to 60 seconds).",
+        "Supported doors: func_door and func_door_rotating. !cancelLink clears only your pending selection.",
+        "!inspectLink: look at your console or its registered door for private link information.",
+        "!unlinkConsole: look at your configured, idle tools console to clear its registered live link and send Unlock to the old door.",
+        "!resetLink: look at your configured, idle tools console to clear a removed door's old link before selecting a replacement.",
+    },
+    ["!slicerHelp hacking"] = {
+        "To hack, a living player equips Devons Hacking Tool and uses Use on a configured, available console. Tools consoles need a linked door.",
+        "In the terminal, click Commands (/help) or enter /help for the current screen's exact commands. Inserting one does not submit it.",
+        "!quitConsole leaves only your current hacking session, even if its page is missing. You must be alive; no tool or eye target is needed.",
+        "Quitting preserves the console and saved links. Use it again for a fresh attempt; quitting cannot undo an accepted completion.",
+    },
+}
+local slicerHelpUsage = {"Usage: !slicerHelp, !slicerHelp browse, !slicerHelp setup, !slicerHelp links, or !slicerHelp hacking (exact spelling, one space)."}
+
 hook.Add("PlayerSay", "slicerQuitConsole", function(ply, text)
+    if type(text) == "string" and (text == "!slicerHelp" or text:find("^!slicerHelp%s")) then
+        -- Stop on requester/reply errors without exposing recognized help as chat.
+        pcall(function()
+            if not IsValid(ply) or not ply:IsPlayer() then return end
+            -- Bound before lookup. Malformed input never appears in the reply.
+            local messages = #text <= 19 and slicerHelp[text] or nil
+            for _, message in ipairs(messages or slicerHelpUsage) do ply:ChatPrint(message) end
+        end)
+        return ""
+    end
+    -- A lost terminal page must not strand its player's server reservation.
     if text ~= "!quitConsole" then return end
     if not IsValid(ply) or not ply:IsPlayer() or not ply:Alive() then return "" end
     if sessions[ply] then

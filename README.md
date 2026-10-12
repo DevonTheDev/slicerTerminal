@@ -38,6 +38,24 @@ and terminal-driven downloads or door unlocking.
    callable `ShouldDropOnDie` hook returns false, overriding the base weapon
    policy without replacing the method with a boolean.
 
+### Find chat commands in-game
+
+Type `!slicerHelp` for a private command directory, then use one of its exact
+lowercase topics: `!slicerHelp browse`, `!slicerHelp setup`, `!slicerHelp links`
+or `!slicerHelp hacking`. Any valid player can read it, alive or dead, without
+a hacking tool, eye target or owned console. The listed actions retain their
+own living-player, creator, tool and eligibility requirements. Admin status
+does not grant authority over another creator's consoles.
+
+Use exactly one ASCII space before a topic. The exact help command followed by
+whitespace but malformed arguments gets one private usage line; case changes
+and prefix near matches remain ordinary chat. Replies are fixed, have at most
+10 lines of at most 240 bytes each, and never echo input or read console data.
+Help does not open forms, execute commands, change pending links or hacking
+sessions, or replace/renew the 60-second row lease from list/find/near pages.
+For the current terminal screen's contextual commands, use **Commands (/help)**
+inside that terminal instead.
+
 ### Select a listed console for a door
 
 After `!listConsoles`, `!findConsoles` or `!nearConsoles`, type exactly
@@ -817,6 +835,19 @@ later session; they do not add session tokens or network replay protection to
 the existing quit protocol. Native button input and rendering still need the
 smoke checks below.
 
+Command-directory tests exercise real chat hooks for all four static topics,
+alive/dead access without creator or admin checks, exact syntax, fixed malformed
+guidance, input non-echo, private reply bounds, and forward/reverse existing-hook
+order. The modified recovery hook retains nil for non-string nonmatches;
+recognized help stays consumed if requester validation or a private reply throws,
+with later reply lines stopped and existing authority preserved. These controls
+do not claim exception handling for unrelated hooks. Tests verify unchanged row
+identity and expiry, plus pending setup/edit
+submissions, locator, door selection/locks and both players' original hacking
+deadlines through the real form and completion callbacks. The feature-absence
+control fails against the unchanged source before the directory is added.
+Native chat visibility and compatibility with other chat addons need GMod.
+
 Session-recovery tests cover lost pages for all three file types, chat cleanup
 before/after the first countdown update, retained callbacks after reopening,
 and fresh minimum deadlines. They verify exact private command handling,
@@ -933,6 +964,10 @@ These tests do **not** replace a Garry's Mod server/client smoke test. Rendering
 assets, physics/Use reach, engine networking and multiplayer timing are not
 emulated. Before a live rollout, use a test server to check:
 
+- Ask for `!slicerHelp` and each topic alive and dead with another player nearby.
+  Check requester-only replies, readable complete lines, malformed usage and
+  ordinary near-match chat. Keep a draft, pending link, locator and hacking
+  countdown open; requesting help must preserve each, including row expiry.
 - Check the mixed-version opening prefix: an old receiver must safely ignore the
   appended suffix, and a new receiver must recognize an actually absent suffix.
   Verify native remaining-bit boundaries, empty/truncated/unsupported suffixes,
