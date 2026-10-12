@@ -46,7 +46,7 @@ return function(gmod, test, equal)
         equal(handled, "")
         local packet = server.messages[#server.messages]
         equal(packet.name, "PlayerSpawnedConsole"); equal(packet.player, owner)
-        equal(#packet.values, 2); equal(packet.values[1], owner); equal(packet.values[2], console:GetName())
+        equal(#packet.values, 3); equal(packet.values[1], owner); equal(packet.values[2], console:GetName())
         return packet
     end
     local function fixture()
@@ -63,7 +63,7 @@ return function(gmod, test, equal)
         fields.done:DoClick()
         equal(count(client, "AdminFinishedCreation"), n + 1)
         local packet = client.lastMessage("AdminFinishedCreation")
-        equal(#packet.values, 1); equal(#packet.values[1], 6, "Original correlated scalar fields plus token")
+        equal(#packet.values, 1); equal(#packet.values[1], 6, "Raw fields, bound descriptor and request token")
         assert(type(packet.values[1][6]) == "string" and packet.values[1][6] ~= "")
         return packet
     end
@@ -86,10 +86,10 @@ return function(gmod, test, equal)
             equal(console.SlicerInformation, nil); equal(#server.returnSpawnedEntities(), 0)
             server.now = 60 -- An open form is not authorized by its later page lease.
             local request = submit(client, fields); locked(fields)
-            equal(request.values[1][5], console:GetName())
+            equal(request.values[1][5].originalName, console:GetName()); equal(request.values[1][5].version, 2)
             relay(server, owner, request)
             local reply = server.lastMessage("SlicerInitialSetupReply")
-            equal(reply.player, owner); equal(reply.values[1], request.values[1][6]); equal(reply.values[2].ok, true)
+            equal(reply.player, owner); equal(reply.values[1], request.values[1][6]); equal(reply.values[2].ok, true); equal(reply.values[2].targetToken, request.values[1][5].targetToken)
             equal(console.SlicerInformation.name, "listed console"); equal(console.SlicerInformation.delay, 2.5)
             equal(console.SlicerInformation.fileName, "newfile"); equal(console.SlicerInformation.fileType, folder)
             equal(sibling.SlicerInformation, nil); equal(#server.returnSpawnedEntities(), 1)
@@ -155,7 +155,7 @@ return function(gmod, test, equal)
     test("legacy five-field save remains admitted after a listed opening", function()
         local server, client, owner, console = fixture()
         local fields = form(client, opening(server, owner, console)); fill(fields, "tools")
-        local request = submit(client, fields); request.values[1][6] = nil
+        local request = submit(client, fields); request.values[1][5] = console:GetName(); request.values[1][6] = nil
         relay(server, owner, request)
         equal(console.SlicerInformation.fileType, "tools"); equal(owner.SlicerPendingConsole, console)
         equal(count(server, "SlicerInitialSetupReply"), 0, "Tokenless legacy setup remains tokenless")

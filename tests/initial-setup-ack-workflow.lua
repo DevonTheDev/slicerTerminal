@@ -82,7 +82,7 @@ return function(gmod, test, equal)
         local owner = server.player()
         local console = server.console(owner)
         local opening = assert(server.lastMessage("PlayerSpawnedConsole"))
-        equal(opening.player, owner); equal(#opening.values, 2, "Existing opening payload stays unchanged")
+        equal(opening.player, owner); equal(#opening.values, 3, "Legacy prefix plus modern target suffix")
         return {server = server, client = client, owner = owner, console = console,
             form = open(client, opening), opening = opening}
     end
@@ -112,7 +112,9 @@ return function(gmod, test, equal)
         equal(#session.client.messages, count + 1, "One Done sends only its configuration request")
         local packet = assert(session.client.lastMessage("AdminFinishedCreation"))
         equal(#packet.values, 1); equal(#packet.values[1], 6)
-        for i = 1, 5 do equal(packet.values[1][i], draft[i], "Legacy setup field " .. i) end
+        for i = 1, 4 do equal(packet.values[1][i], draft[i], "Raw setup field " .. i) end
+        equal(packet.values[1][5].version, 2); equal(packet.values[1][5].originalName, draft[5])
+        assert(packet.values[1][5].targetToken:match("^[1-9]%d*$"))
         local token = packet.values[1][6]
         assert(type(token) == "string" and #token <= 16 and token:match("^[1-9]%d*$"), "Canonical request token")
         assert(tonumber(token) <= 9007199254740991, "Exact bounded token")

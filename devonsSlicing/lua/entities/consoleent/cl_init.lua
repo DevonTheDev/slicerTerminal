@@ -129,7 +129,9 @@ local activeTerminalSession
 -- Reincludes retain live initial drafts and requests; retired forms leave no cache.
 slicerInitialSetupState = slicerInitialSetupState or {forms = {}, requests = {}}
 slicerInitialSetupSerial = slicerInitialSetupSerial or 0
+slicerInitialSetupState.modernForms = slicerInitialSetupState.modernForms or {}
 local setupForms, setupRequests = slicerInitialSetupState.forms, slicerInitialSetupState.requests
+local modernSetupForms = slicerInitialSetupState.modernForms
 local closeConsoleUI
 
 local function closeCommandHelp()
@@ -522,7 +524,26 @@ net.Receive("PlayerSpawnedConsole", function()
     if not IsValid(callingPlayer) or not callingPlayer:IsPlayer() or not callingPlayer:Alive()
         or type(sentConsoleName) ~= "string" then return end
 
-    local previous = setupForms[sentConsoleName]
+    -- The native second result reports remaining bits. Never infer an absent
+    -- suffix from rounded bytes or ReadString's empty/truncated-read result.
+    local _, remainingBits = net.BytesLeft()
+    local targetToken
+    if remainingBits ~= 0 then
+        local suffix = type(remainingBits) == "number" and remainingBits >= 8 and net.ReadString() or nil
+        targetToken = type(suffix) == "string" and suffix:match("^slicer%-initial%-v2:([1-9]%d*)$") or nil
+        if not targetToken or #targetToken > 16 or (#targetToken == 16 and targetToken > "9007199254740991")
+            or #sentConsoleName == 0 or #sentConsoleName > 256 or sentConsoleName:find("%z") then
+            callingPlayer:ChatPrint("Initial setup is unavailable for this opening. Close it and use the console again.")
+            return
+        end
+    end
+    local forms = targetToken and modernSetupForms or setupForms
+    local formKey = targetToken or sentConsoleName
+    local previous = forms[formKey]
+    if previous and targetToken and previous.originalName ~= sentConsoleName then
+        callingPlayer:ChatPrint("This setup opening conflicts with the existing draft. Close it and use the console again.")
+        return
+    end
     if previous and previous.isCurrent() then
         previous.frame:MakePopup()
         previous.frame:MoveToFront()
@@ -531,15 +552,15 @@ net.Receive("PlayerSpawnedConsole", function()
     if previous then previous.close() end
 
     local initialParent = vgui.Create("DFrame")
-    local setup = {frame = initialParent, retired = false}
-    setupForms[sentConsoleName] = setup
+    local setup = {frame = initialParent, retired = false, originalName = sentConsoleName}
+    forms[formKey] = setup
     function setup.isCurrent()
-        return not setup.retired and setupForms[sentConsoleName] == setup and isLiveCommandPanel(initialParent)
+        return not setup.retired and forms[formKey] == setup and isLiveCommandPanel(initialParent)
     end
     local function retireSetup()
         if setup.retired then return end
         setup.retired = true -- Retire ownership before native cleanup can reenter.
-        if setupForms[sentConsoleName] == setup then setupForms[sentConsoleName] = nil end
+        if forms[formKey] == setup then forms[formKey] = nil end
         local submission = setup.pending
         if submission and setupRequests[submission.token] == submission then setupRequests[submission.token] = nil end
         setup.pending = nil
@@ -646,10 +667,18 @@ net.Receive("PlayerSpawnedConsole", function()
             return setup.isCurrent() and setup.pending == submission and setupRequests[token] == submission
         end
         local function packet()
-            return {snapshot[1], snapshot[2], snapshot[3], snapshot[4], snapshot[5], snapshot[6]}
+            local identity = targetToken and {version = 2, targetToken = targetToken, originalName = snapshot[5]} or snapshot[5]
+            return {snapshot[1], snapshot[2], snapshot[3], snapshot[4], identity, snapshot[6]}
+        end
+        local function boundResult(result)
+            if not targetToken or result.targetToken == targetToken then return true end
+            if result.targetToken == nil then
+                showStatus("Bound result confirmation is unavailable on this server. The original setup may already have been accepted; close this form to check the console.", true)
+            end
+            return false
         end
         function submission.reply(result)
-            if not ownsSubmission() or type(result) ~= "table" then return end
+            if not ownsSubmission() or type(result) ~= "table" or not boundResult(result) then return end
             if result.ok == true then
                 if type(result.name) ~= "string" or #result.name > 128 or string.Trim(result.name) == ""
                     or result.fileType ~= enteredFileType then return end
@@ -670,7 +699,7 @@ net.Receive("PlayerSpawnedConsole", function()
             end
         end
         function submission.statusReply(result)
-            if not ownsSubmission() or type(result) ~= "table" then return end
+            if not ownsSubmission() or type(result) ~= "table" or not boundResult(result) then return end
             if result.confirmed == true then
                 if type(result.name) ~= "string" or #result.name > 128 or string.Trim(result.name) == ""
                     or result.fileType ~= enteredFileType then return end
@@ -757,6 +786,9 @@ hook.Add("OnScreenSizeChanged", "SlicerCreatorFormReflow", function()
     local width, height = ScrW(), ScrH()
     if not supportedPlayerSize(width, height) then return end
     for _, form in pairs(setupForms) do
+        if form.reflow then form.reflow(width, height) end
+    end
+    for _, form in pairs(modernSetupForms) do
         if form.reflow then form.reflow(width, height) end
     end
     for _, form in pairs(setupEditForms) do form.reflow(width, height) end

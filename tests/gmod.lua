@@ -119,6 +119,15 @@ function M.new()
     end
     local function read() return table.remove(env.incoming, 1) end
     env.net.ReadEntity, env.net.ReadString, env.net.ReadTable = read, read, read
+    -- Only optional opening-suffix availability is modeled here. This is not a
+    -- native codec: strings include their terminator, other values are opaque.
+    function env.net.BytesLeft()
+        local bits = 0
+        for _, value in ipairs(env.incoming or {}) do
+            bits = bits + (type(value) == "string" and (#value + 1) * 8 or 16)
+        end
+        return math.ceil(bits / 8), bits
+    end
     function env.receive(name, sender, ...)
         env.incoming = {...}
         assert(env.receivers[name], "Missing receiver: " .. name)(0, sender)

@@ -389,14 +389,36 @@ now configured target and leaves its pending form locked. Choose that form's
 **Check setup result** to query the original receipt. An unconfirmed result
 does not unlock or resend the submission.
 
-The exact-entity guarantee applies to opening. Initial forms and their existing
-five-field legacy or six-field correlated saves remain keyed by runtime name.
-The new command refuses a present same-owner collision; it does not bind an
-old form or delayed save to an entity for its whole lifetime if an external
-rename later reuses a removed entity's name. Ordinary removal and paste use
-`GetCreationID()` names rather than live console counts. Eventual native ID wrap
-remains the existing naming boundary described above. Lifetime binding under
-external name reuse or ID wrap would require a separate form/wire/save change.
+### Keep an initial draft bound to its console
+
+With current server and client files, each opening carries a server-issued target
+token. The draft can configure only that exact console for its original creator.
+Removing A and assigning A's runtime name to a new console B cannot make A's
+old draft configure B or make B raise A's draft. B opens a separate blank form.
+Ordinary removal and spawn already use distinct `GetCreationID()` names; the
+regression uses the supported server-side `SetName` API to reuse a name. Native
+creation-ID wrap is a documented potential naming boundary, not a reproduced
+engine event in these tests.
+
+A rename, observed owner/identity change or intervening configuration makes the
+old target ticket unavailable. Close that form and open an eligible console
+again. Repeated opening keeps the same current draft; closing and reopening
+starts blank with a new submission identity. Tickets have no elapsed-time expiry,
+so a long draft survives listing expiry, relisting and ordinary death. Removal,
+copied-state reset, disconnect and server config reinclude retire authority.
+The server keeps at most one pending ticket and one historical receipt per live
+console. Its target serial survives config reinclude and stops at exhaustion.
+
+Mixed versions intentionally retain a compatibility boundary. An old two-field
+opening creates a legacy name-based form. Old clients and deliberately string-
+shaped five/six-field callers keep their original admission and name-reuse limit.
+A current opening appends `slicer-initial-v2:<targetToken>` to the existing player
+and runtime-name prefix; a present malformed or unavailable suffix opens no
+writable form. Modern saves put a tagged descriptor in field 5, which the
+published old server rejects before mutation. A modern form never retries as a
+legacy save. An unbound old-server response leaves its draft uncertain and
+explains that bound result confirmation is unavailable. Use a fresh server
+restart for rollout; recovery across occupied-session live refresh is not promised.
 
 ### Check a missing initial setup reply
 
@@ -421,13 +443,18 @@ cannot start the new query show an unavailable status and retain this same
 uncertainty; they receive no replacement setup request.
 
 The server keeps one private receipt per live console for correlated acceptance,
-matched to the authenticated creator, token and all five original scalar fields.
+matched to the authenticated creator, request token and all five original scalar
+fields. Modern receipts also require the exact target token and entity; modern
+and legacy queries cannot confirm each other's acceptance.
 Missing, ambiguous or mismatched evidence is unconfirmed. Removal, copied-state
 reset, disconnect or a server config reinclude retires receipts; changed owner,
 class, creation ID or entity index also invalidates them. Legacy tokenless setup
 and target identity strings over 256 bytes create no receipt, without changing
 existing setup admission. Receipts are not persisted or copied. Ordinary death,
-saved edits and hacking/link changes do not erase historical acceptance.
+saved edits and hacking/link changes do not erase historical acceptance. A
+server-side reset followed by tokenless legacy setup also keeps any historical
+receipt; a later correlated acceptance replaces it. Confirmation describes the
+original acceptance, never a reconstruction from current settings.
 
 Callback tests cover dropped/reordered replies, exact binding, lifecycle cleanup,
 reentrant callbacks, simultaneous forms, older-server query-start failure and
@@ -867,9 +894,13 @@ and name ambiguity, callback-driven context changes, removed references, normal
 CreationID-based paste names, repeated/dismissed/pending forms, legacy saves and
 unchanged unrelated hacks, editors, receipts, markers and door choices. Their
 Entity/String call recording and Derma substitutes do not establish native wire
-encoding, visual focus or multiplayer behavior. External historical name reuse
-and eventual native ID wrap remain existing protocol limits, not lifetime-binding
-tests or behaviors this opening command fixes.
+encoding, visual focus or multiplayer behavior. The identity server/client/workflow
+entries additionally cover real Remove/Spawn/SetName reuse, immutable nested
+payloads, bound replies, one-time reentrant cleanup, serial exhaustion and
+historical receipt isolation. A verbatim attributed baseline handler proves that
+modern descriptors are rejected by the old server before mutation. Remaining
+opening bits are modeled only for suffix branch behavior, not native padding or
+a general network codec. No test claims to reproduce native creation-ID wrap.
 
 The original client source uses CRLF line endings, which this change preserves.
 To check whitespace without treating CRLF as trailing whitespace:
@@ -884,6 +915,15 @@ These tests do **not** replace a Garry's Mod server/client smoke test. Rendering
 assets, physics/Use reach, engine networking and multiplayer timing are not
 emulated. Before a live rollout, use a test server to check:
 
+- Check the mixed-version opening prefix: an old receiver must safely ignore the
+  appended suffix, and a new receiver must recognize an actually absent suffix.
+  Verify native remaining-bit boundaries, empty/truncated/unsupported suffixes,
+  descriptor table serialization and bound replies without any fallback save
+- Open A's draft, remove A, spawn B and use the supported server-side `SetName`
+  API to assign A's old name to B. A's save must refuse and B must open blank.
+  Repeat after accepting A and dropping its reply; its removed receipt must not
+  confirm B. Check distant/out-of-PVS listed setup and actual Derma draft/focus
+  preservation and pending resize at 640×480 and normal desktop size
 - With two players, defer an ordinary console and paste an unconfigured copy.
   From a distance list/find/near them, open the intended row with
   `!setupConsole <row>`, and check private delivery and one existing initial form.

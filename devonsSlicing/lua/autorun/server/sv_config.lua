@@ -201,21 +201,148 @@ local function validInitialSetupToken(token)
         and (#token < 16 or token <= "9007199254740991")
 end
 
--- Historical initial acceptance is private, bounded to one receipt per console.
--- Reinclude deliberately forgets receipts; current configuration is not proof.
-local initialSetupReceipts = {}
+-- The target serial survives reinclude; maps and generation deliberately do not.
+-- Nil alone initializes it: corruption (including false) must fail closed.
+if slicerInitialSetupTargetSerial == nil then slicerInitialSetupTargetSerial = 0 end
+local initialGeneration = {}
+slicerInitialSetupGeneration = initialGeneration
+local initialTickets, initialTokens, initialSetupReceipts, initialReceiptTokens = {}, {}, {}, {}
 
-function retireSlicerInitialSetupReceipt(console)
-    if console ~= nil then initialSetupReceipts[console] = nil end
+local function initialRegistryCurrent()
+    return slicerInitialSetupGeneration == initialGeneration
 end
 
-function retireSlicerInitialSetupReceiptsForPlayer(ply)
-    for console, receipt in pairs(initialSetupReceipts) do
-        if receipt.player == ply then initialSetupReceipts[console] = nil end
+local function retireInitialTicket(ticket)
+    if initialTickets[ticket.console] == ticket then initialTickets[ticket.console] = nil end
+    if initialTokens[ticket.targetToken] == ticket then initialTokens[ticket.targetToken] = nil end
+end
+
+local function retireInitialReceipt(console, receipt)
+    if initialSetupReceipts[console] == receipt then initialSetupReceipts[console] = nil end
+    if receipt.targetToken and initialReceiptTokens[receipt.targetToken] == receipt then
+        initialReceiptTokens[receipt.targetToken] = nil
     end
 end
 
+function retireSlicerInitialSetupReceipt(console)
+    local receipt = console ~= nil and initialSetupReceipts[console] or nil
+    if receipt then retireInitialReceipt(console, receipt) end
+end
+
+function retireSlicerInitialSetup(console)
+    local ticket = console ~= nil and initialTickets[console] or nil
+    if ticket then retireInitialTicket(ticket) end
+    retireSlicerInitialSetupReceipt(console)
+end
+
+function retireSlicerInitialSetupsForPlayer(ply)
+    for _, ticket in pairs(initialTickets) do
+        if ticket.player == ply then retireInitialTicket(ticket) end
+    end
+    for console, receipt in pairs(initialSetupReceipts) do
+        if receipt.player == ply then retireInitialReceipt(console, receipt) end
+    end
+end
+
+local function validInitialName(name)
+    return type(name) == "string" and #name > 0 and #name <= 256 and not name:find("%z")
+end
+
+local function ownsInitialTicket(ticket)
+    return initialRegistryCurrent() and initialTickets[ticket.console] == ticket
+        and initialTokens[ticket.targetToken] == ticket
+end
+
+local function initialIdentityCurrent(record, pending)
+    local console, ply = record.console, record.player
+    if not IsValid(console) or console:GetClass() ~= "consoleent" or not IsValid(console)
+        or not IsValid(ply) or not ply:IsPlayer() or not IsValid(ply) or not IsValid(console) then return false end
+    local creationID = console:GetCreationID()
+    if not IsValid(console) then return false end
+    local entityIndex = console:EntIndex()
+    if not IsValid(console) then return false end
+    local name = pending and console:GetName() or nil
+    return IsValid(console) and IsValid(ply) and console.SlicerCreator == ply
+        and creationID == record.creationID and entityIndex == record.entityIndex
+        and (not pending or (name == record.entityName and console.SlicerInformation == nil))
+end
+
+local function currentInitialTicket(ticket)
+    if not ownsInitialTicket(ticket) then return false end
+    if not initialIdentityCurrent(ticket, true) then
+        retireInitialTicket(ticket)
+        return false
+    end
+    return ownsInitialTicket(ticket)
+end
+
+local function initialUnreserved(console)
+    return not slicerConsoleHasActiveSession or not slicerConsoleHasActiveSession(console)
+end
+
+-- Return only captured opening data and a map-ownership guard. Listed opening
+-- runs its existing final entity/page checks after preparation, with no new
+-- target accessor after that guard.
+function prepareSlicerInitialSetup(ply, console, name)
+    if not initialRegistryCurrent() then return end
+    local ticket = console ~= nil and initialTickets[console] or nil
+    if ticket and not currentInitialTicket(ticket) then ticket = nil end
+    if not IsValid(ply) or not ply:IsPlayer() or not IsValid(console)
+        or console:GetClass() ~= "consoleent" or console.SlicerCreator ~= ply
+        or console.SlicerInformation ~= nil or not validInitialName(name) then return end
+    local candidate = ticket
+    if not candidate then
+        if not IsValid(console) then return end
+        local creationID = console:GetCreationID()
+        if not IsValid(console) then return end
+        local entityIndex = console:EntIndex()
+        if not IsValid(console) then return end
+        candidate = {console = console, player = ply, entityName = name,
+            creationID = creationID, entityIndex = entityIndex}
+    end
+    if candidate.player ~= ply or candidate.entityName ~= name or not initialUnreserved(console)
+        or not initialIdentityCurrent(candidate, true) or not initialRegistryCurrent() then return end
+    -- A native callback may have opened this target or retired an earlier ticket.
+    if ticket then
+        if not ownsInitialTicket(ticket) then return end
+    elseif initialTickets[console] ~= nil then
+        return -- A reentrant opening owns the new record; never replace it.
+    else
+        local serial = slicerInitialSetupTargetSerial
+        if type(serial) ~= "number" or serial < 0 or serial % 1 ~= 0 or serial >= 9007199254740991 then return end
+        slicerInitialSetupTargetSerial = serial + 1
+        candidate.targetToken = string.format("%.0f", slicerInitialSetupTargetSerial)
+        ticket = candidate
+        initialTickets[console], initialTokens[ticket.targetToken] = ticket, ticket
+    end
+    return ticket.targetToken, function() return ownsInitialTicket(ticket) end
+end
+
+local function modernInitialFields(fields)
+    if type(fields) ~= "table" then return end
+    for key in pairs(fields) do
+        if type(key) ~= "number" or key % 1 ~= 0 or key < 1 or key > 6 then return end
+    end
+    local descriptor = fields[5]
+    if type(descriptor) ~= "table" then return end
+    for key in pairs(descriptor) do
+        if key ~= "version" and key ~= "targetToken" and key ~= "originalName" then return end
+    end
+    if descriptor.version ~= 2 or not validInitialSetupToken(descriptor.targetToken)
+        or not validInitialSetupToken(fields[6]) or not validInitialName(descriptor.originalName) then return end
+    local information = normalizeSlicerInformation({name = fields[1], delay = fields[2], fileType = fields[3], fileName = fields[4]})
+    if not information then return end
+    -- Copy scalars before any callback-capable target access. No nested alias.
+    return information, {fields[1], fields[2], fields[3], fields[4], descriptor.originalName},
+        descriptor.targetToken, fields[6]
+end
+
 local function usableInitialSetupReceipt(console, receipt)
+    if receipt.targetToken then
+        return initialRegistryCurrent() and initialReceiptTokens[receipt.targetToken] == receipt
+            and initialIdentityCurrent(receipt, false) and initialRegistryCurrent()
+            and initialSetupReceipts[console] == receipt and initialReceiptTokens[receipt.targetToken] == receipt
+    end
     return IsValid(console) and console:GetClass() == "consoleent"
         and console:GetCreationID() == receipt.creationID and console:EntIndex() == receipt.entityIndex
         and IsValid(receipt.player) and receipt.player:IsPlayer() and console.SlicerCreator == receipt.player
@@ -228,13 +355,27 @@ net.Receive("SlicerInitialSetupStatusRequest", function(_, ply)
     local fields = net.ReadTable()
     if type(fields) ~= "table" or not validInitialSetupToken(fields[6]) then return end
     local token, result = fields[6], {confirmed = false}
-    if type(fields[5]) == "string" and #fields[5] <= 256
+    if type(fields[5]) == "table" then
+        local _, raw, targetToken = modernInitialFields(fields)
+        result.targetToken = validInitialSetupToken(fields[5].targetToken) and fields[5].targetToken or nil
+        local receipt = targetToken and initialReceiptTokens[targetToken] or nil
+        if receipt and receipt.player == ply then
+            if not usableInitialSetupReceipt(receipt.console, receipt) then
+                retireInitialReceipt(receipt.console, receipt)
+            elseif receipt.token == token then
+                local exact = true
+                for i = 1, 5 do if receipt.fields[i] ~= raw[i] then exact = false end end
+                if exact then result = {confirmed = true, name = receipt.name,
+                    fileType = receipt.fileType, targetToken = targetToken} end
+            end
+        end
+    elseif type(fields[5]) == "string" and #fields[5] <= 256
         and normalizeSlicerInformation({name = fields[1], delay = fields[2], fileType = fields[3], fileName = fields[4]}) then
         local candidate, matches = nil, 0
         for console, receipt in pairs(initialSetupReceipts) do
             if not usableInitialSetupReceipt(console, receipt) then
-                initialSetupReceipts[console] = nil
-            elseif receipt.player == ply and receipt.token == token then
+                retireInitialReceipt(console, receipt)
+            elseif not receipt.targetToken and receipt.player == ply and receipt.token == token then
                 candidate, matches = receipt, matches + 1
             end
         end
@@ -262,6 +403,62 @@ local function initialSetupReply(ply, token, result)
     net.Send(ply)
 end
 
+local function saveModernInitialSetup(ply, fields)
+    local descriptor, requestToken = fields[5], fields[6]
+    local targetToken = descriptor.targetToken
+    local ticket = validInitialSetupToken(targetToken) and initialTokens[targetToken] or nil
+    -- Own the ticket before target/native validation can call this receiver again.
+    -- A nested attempt has no independent result and must not unlock the outer UI.
+    if ticket and ticket.player == ply and ticket.inProgress then return end
+    local operation = {}
+    if ticket and ticket.player == ply and ownsInitialTicket(ticket) then ticket.inProgress = operation end
+    local function reply(result)
+        if ticket and ownsInitialTicket(ticket) and ticket.inProgress == operation then ticket.inProgress = nil end
+        result.targetToken = validInitialSetupToken(targetToken) and targetToken or nil
+        initialSetupReply(ply, requestToken, result)
+    end
+    local information, raw, parsedToken = modernInitialFields(fields)
+    if not information then
+        reply({ok = false, message = "Invalid bound setup fields. Check your draft or close this form and reopen the console."})
+        return
+    end
+    if not ticket or ticket.player ~= ply or ticket.entityName ~= raw[5] or parsedToken ~= targetToken
+        or ticket.inProgress ~= operation or not currentInitialTicket(ticket) then
+        reply({ok = false, message = "This setup target is unavailable or already configured. Close this form and use the console again."})
+        return
+    end
+    local target = ticket.console
+    local ambiguous = false
+    for _, sibling in ipairs(ents.FindByClass("consoleent")) do
+        if sibling ~= target and IsValid(sibling) and sibling:GetName() == raw[5]
+            and sibling.SlicerCreator == ply and not sibling.SlicerInformation then ambiguous = true end
+    end
+    local unreserved = initialUnreserved(target)
+    if not currentInitialTicket(ticket) or ticket.inProgress ~= operation then
+        reply({ok = false, message = "This setup target changed. Close this form and use the console again."})
+        return
+    end
+    if ambiguous or not unreserved then
+        reply({ok = false, message = "This console's name is ambiguous or it is reserved. Try again when it is available."})
+        return
+    end
+    -- Capture evidence before commit; getters are never called after assignment.
+    local receipt = {console = target, player = ply, creationID = ticket.creationID, entityIndex = ticket.entityIndex,
+        targetToken = targetToken, token = requestToken, fields = raw, name = information.name, fileType = information.fileType}
+    if not currentInitialTicket(ticket) or ticket.inProgress ~= operation then
+        reply({ok = false, message = "This setup target changed. Close this form and use the console again."})
+        return
+    end
+    target.SlicerInformation = information
+    spawnedEntities[#spawnedEntities + 1] = {entityName = raw[5], entity = target, information = information}
+    if information.fileType == "tools" then ply.SlicerPendingConsole = target end
+    retireInitialTicket(ticket)
+    local previous = initialSetupReceipts[target]
+    if previous then retireInitialReceipt(target, previous) end
+    initialSetupReceipts[target], initialReceiptTokens[targetToken] = receipt, receipt
+    reply({ok = true, name = information.name, fileType = information.fileType})
+end
+
 util.AddNetworkString("AdminFinishedCreation")
 util.AddNetworkString("SlicerInitialSetupReply")
 net.Receive("AdminFinishedCreation", function(_, ply)
@@ -272,6 +469,12 @@ net.Receive("AdminFinishedCreation", function(_, ply)
 
     local token = givenInformation[6]
     if token ~= nil and not validInitialSetupToken(token) then return end
+    if type(givenInformation[5]) == "table" then
+        -- A descriptor is always modern, including malformed attempts. Never
+        -- downgrade it into the old name lookup, even without a request token.
+        if token ~= nil then saveModernInitialSetup(ply, givenInformation) end
+        return
+    end
 
     -- [name, delay, fileType, fileName, entityName, optional token] comes from the client.
     local name, delay, fileType, fileName, entityName = givenInformation[1], givenInformation[2], givenInformation[3], givenInformation[4], givenInformation[5]
@@ -299,13 +502,16 @@ net.Receive("AdminFinishedCreation", function(_, ply)
         return
     end
 
+    local pendingTicket = initialTickets[target]
+    if pendingTicket then retireInitialTicket(pendingTicket) end
     target.SlicerInformation = information
     table.insert(spawnedEntities, {entityName = entityName, entity = target, information = information})
     if fileType == "tools" then ply.SlicerPendingConsole = target end
     -- Commit the receipt before any response can reenter. Identity length only
     -- limits recovery storage, never changes the original setup admission.
     if token ~= nil then
-        initialSetupReceipts[target] = nil
+        local previous = initialSetupReceipts[target]
+        if previous then retireInitialReceipt(target, previous) end
         if #entityName <= 256 then
             initialSetupReceipts[target] = {player = ply, creationID = target:GetCreationID(), entityIndex = target:EntIndex(),
                 token = token, fields = {name, delay, fileType, fileName, entityName},

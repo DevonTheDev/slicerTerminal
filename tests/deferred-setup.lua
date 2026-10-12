@@ -54,7 +54,7 @@ return function(gmod, test, equal)
         local packet = server.messages[#server.messages]
         equal(packet.name, "PlayerSpawnedConsole", "Reuse the existing setup protocol")
         equal(packet.player, owner, "Only send setup to its creator")
-        equal(#packet.values, 2, "Keep the original packet shape")
+        equal(#packet.values, 3, "Preserve the legacy prefix and append target authority")
         equal(packet.values[1], owner); equal(packet.values[2], console:GetName())
         return openPacket(client, packet)
     end

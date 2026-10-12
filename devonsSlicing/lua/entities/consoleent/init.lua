@@ -73,7 +73,7 @@ function ENT:OnEntityCopyTableFinish(data)
 end
 
 local function resetCopiedState(console)
-    retireSlicerInitialSetupReceipt(console)
+    retireSlicerInitialSetup(console)
     retireSlicerSetupEdit(console)
     console.SlicerCreator, console.SlicerDoor = nil, nil
     console.SlicerInformation = normalizeSlicerInformation(console.SlicerInformation)
@@ -117,12 +117,17 @@ end
 
 local function openSetup(ply, ent, listed)
     if not IsValid(ply) or not ply:IsPlayer() or (listed and not IsValid(ply)) or not ply:Alive() then return end
-    -- Listed entry checks its captured context after this actor check. Keep the
-    -- physical spawn/Use path and its existing two-field message unchanged.
+    local name = listed and listed.name or ent:GetName()
+    local token, currentTicket = prepareSlicerInitialSetup(ply, ent, name)
+    -- Ticket preparation precedes the existing final listed guard. Afterwards
+    -- only captured scalars and private map ownership are consulted.
     if listed and not listed.current() then return end
+    if currentTicket and not currentTicket() then return end
     net.Start("PlayerSpawnedConsole")
         net.WriteEntity(ply)
-        net.WriteString(listed and listed.name or ent:GetName())
+        net.WriteString(name)
+        -- Even issuance failure advertises modern capability and fails closed.
+        net.WriteString("slicer-initial-v2:" .. (token or ""))
     net.Send(ply)
     return true
 end
@@ -187,7 +192,7 @@ hook.Add("PlayerDeath", "checkForInConsole", function(victim)
 end)
 
 hook.Add("PlayerDisconnected", "slicerReleaseConsole", function(ply)
-    retireSlicerInitialSetupReceiptsForPlayer(ply)
+    retireSlicerInitialSetupsForPlayer(ply)
     consoleListings[ply] = nil
     retireSlicerSetupEditsForPlayer(ply)
     releaseSession(ply, false)
@@ -794,7 +799,7 @@ net.Receive("destroyOnServer", function(_, ply)
 end)
 
 function ENT:OnRemove()
-    retireSlicerInitialSetupReceipt(self)
+    retireSlicerInitialSetup(self)
     retireSlicerSetupEdit(self)
     for ply, session in pairs(sessions) do
         if session.console == self then releaseSession(ply, true) end

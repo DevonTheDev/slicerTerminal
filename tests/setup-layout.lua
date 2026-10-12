@@ -224,7 +224,7 @@ return function(gmod, test, equal)
                 local fields = submitted.values[1]
                 equal(fields[1], " Current name "); equal(fields[2], 2.5)
                 equal(fields[3], "server"); equal(fields[4], " Final file ")
-                equal(fields[5], console:GetName())
+                equal(fields[5].version, 2); equal(fields[5].originalName, console:GetName())
                 assert(type(fields[6]) == "string" and fields[6]:match("^[1-9]%d*$"), "Append a canonical correlation token")
                 equal(fresh.frame.valid, true); equal(fresh.done.enabled, true); equal(fresh.done.text, "Check setup result")
                 equal(fresh.later.text, "Close")

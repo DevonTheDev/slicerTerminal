@@ -31,8 +31,8 @@ return function(gmod, test, equal)
         equal(handled, ""); equal(#owner.chats, chats)
         local packet = env.messages[#env.messages]
         equal(packet.name, "PlayerSpawnedConsole"); equal(packet.player, owner)
-        equal(#packet.values, 2); equal(packet.values[1], owner); equal(packet.values[2], console:GetName())
-        equal(table.concat(calls, ","), "Start:PlayerSpawnedConsole,Entity,String")
+        equal(#packet.values, 3); equal(packet.values[1], owner); equal(packet.values[2], console:GetName())
+        equal(table.concat(calls, ","), "Start:PlayerSpawnedConsole,Entity,String,String")
         return packet
     end
     local function reject(env, owner, row, hint)

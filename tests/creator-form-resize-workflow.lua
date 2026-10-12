@@ -139,7 +139,7 @@ return function(gmod, test, equal)
         if form.editing then
             equal(packet.values[1], form.console); equal(packet.values[2], form.token)
         else
-            equal(packet.values[1][5], form.console:GetName())
+            equal(packet.values[1][5].version, 2); equal(packet.values[1][5].originalName, form.console:GetName())
             assert(type(packet.values[1][6]) == "string", "Initial request has a correlated identity")
         end
         return packet
