@@ -5,7 +5,7 @@ return function(gmod, test, equal)
         {command = "!slicerHelp browse", fragments = {"!listConsoles", "!findConsoles", "!nearConsoles", "!locateConsole", "60 seconds", "setup", "unconfirmed", "reserved"}},
         {command = "!slicerHelp setup", fragments = {"!setupConsole", "!editConsole", "creator", "Use"}},
         {command = "!slicerHelp links", fragments = {"!setEntity", "!cancelLink", "!inspectLink", "!resetLink", "!unlinkConsole", "creator", "func_door_rotating"}},
-        {command = "!slicerHelp hacking", fragments = {"Hacking Tool", "Use", "/help", "!quitConsole", "living"}},
+        {command = "!slicerHelp hacking", fragments = {"Hacking Tool", "Use", "/help", "!hackStatus", "!quitConsole", "living"}},
     }
     local function reply(env, player, command)
         local before, packets = #player.chats, #env.messages

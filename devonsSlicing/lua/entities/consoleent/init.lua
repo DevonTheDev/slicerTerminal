@@ -243,6 +243,7 @@ local slicerHelp = {
     ["!slicerHelp hacking"] = {
         "To hack, a living player equips Devons Hacking Tool and uses Use on a configured, available console. Tools consoles need a linked door.",
         "In the terminal, click Commands (/help) or enter /help for the current screen's exact commands. Inserting one does not submit it.",
+        "!hackStatus privately shows your session's server minimum wait, not client progress or completion. You must be alive; no tool or eye target is needed.",
         "!quitConsole leaves only your current hacking session, even if its page is missing. You must be alive; no tool or eye target is needed.",
         "Quitting preserves the console and saved links. Use it again for a fresh attempt; quitting cannot undo an accepted completion.",
     },
@@ -505,6 +506,61 @@ end
 local function finiteConsoleNumber(value)
     return type(value) == "number" and value > -math.huge and value < math.huge
 end
+
+-- Reply ownership lasts only for this synchronous command. A nested status
+-- request retires the outer reply without changing the hacking reservation.
+local hackStatusReplies = {}
+hook.Add("PlayerSay", "slicerHackStatus", function(ply, text)
+    if text ~= "!hackStatus" then return end
+    if ply == nil then return "" end
+    local reply, session = {}, sessions[ply]
+    local console = session and session.console
+    hackStatusReplies[ply] = reply
+    local function current(requireConsole)
+        if hackStatusReplies[ply] ~= reply then return false end
+        if not IsValid(ply) or not ply:IsPlayer() or not ply:Alive() then return false end
+        if requireConsole and (not IsValid(console) or console:GetClass() ~= "consoleent") then return false end
+        -- Check private identity last, after engine accessors can reenter.
+        return hackStatusReplies[ply] == reply and sessions[ply] == session
+            and (not session or session.console == console)
+    end
+    -- Recognized status stays private even if an accessor or ChatPrint fails.
+    pcall(function()
+        if not current(false) then return end
+        if not session then
+            ply:ChatPrint("You are not in a hacking session.")
+            return
+        end
+        local validConsole = IsValid(console) and console:GetClass() == "consoleent"
+        local deadline, now = session.completeAt, CurTime()
+        local remaining = finiteConsoleNumber(deadline) and finiteConsoleNumber(now) and deadline - now
+        if not validConsole or not finiteConsoleNumber(remaining) then
+            if current(false) then
+                ply:ChatPrint("Your hacking session status is unavailable. Use !quitConsole to leave it, then use the console again.")
+            end
+            return
+        end
+        local information = console.SlicerInformation
+        local name = type(information) == "table" and information.name
+        local label = "You have a current hacking session."
+        if type(name) == "string" and #name <= 128 and string.Trim(name) ~= "" then
+            label = "Your hacking session: console '" .. inspectionText(name) .. "'."
+        end
+        local messages = {
+            label,
+            remaining > 0
+                and "Server minimum wait: " .. string.format("%.17g", math.ceil(remaining)) .. " seconds remaining."
+                or "Server minimum wait has elapsed; this does not mean the hack is complete.",
+            "Finish the terminal steps, or use !quitConsole to leave your session. The server does not track your current screen or countdown.",
+        }
+        for _, message in ipairs(messages) do
+            if not current(true) then return end
+            ply:ChatPrint(message)
+        end
+    end)
+    if hackStatusReplies[ply] == reply then hackStatusReplies[ply] = nil end
+    return ""
+end)
 
 -- GetPos may be unavailable on a retiring entity. Copy finite native vector
 -- coordinates once, so later samples cannot mutate the request's distances.

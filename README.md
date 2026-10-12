@@ -730,6 +730,31 @@ terminal remains available for another attempt, and a linked door stays locked.
 Starting again begins a fresh login; there is no saved partial progress. Quitting
 cannot undo a completion request that was already sent.
 
+### Check your hacking session
+
+Type exactly `!hackStatus` in chat for a private report on your own current
+server reservation. You must be alive, but need no equipped tool, eye target,
+listing or console ownership. The command accepts no arguments; case changes,
+extra spaces and near matches remain ordinary chat.
+
+For a current session, the report shows its console's saved name when usable
+and the remaining **server minimum wait**, rounded up to whole seconds. The
+deadline is the one set when you opened the terminal: one configured delay for
+`tools`, two for `data` or `server`. At or after that deadline, it says the minimum
+wait has elapsed. This does **not** mean the hack is complete: the server does
+not track your client screen, entered commands or local countdown stage.
+Finish the steps in the terminal, or use `!quitConsole` to leave the session.
+The ordinary tool, target and completion checks still apply.
+
+If you have no session, you get one private notice. An unavailable console or
+invalid timing gets recovery guidance without clearing the reservation. Status sends no network
+packets and does not open, renew, cancel or complete a hack, change saved data or
+links, or refresh listing/edit authority. Replies have at most three lines of
+240 bytes each; names retain literal spelling and display controls are replaced.
+A quit, removal, replacement or nested status request stops the old reply's
+remaining lines. Native chat delivery and interaction with other chat addons
+still need an in-game check.
+
 ### Recover a missing terminal screen
 
 If your terminal screen disappears but the console or hacking tool is still
@@ -872,6 +897,15 @@ living-player checks, idle/repeated requests without cleanup packets, no tool
 or target requirement, and preserved setup/edit/listing/marker/link state and
 other players' original sessions. These are host callback tests; native chat
 accessibility and compatibility with chat addons remain unverified.
+
+Hack-status tests execute real `PlayerSay` and reservation callbacks for absent
+and current data/server/tools sessions, before/at/after the original deadline,
+per-player privacy, exact grammar, living-player admission and bounded literal
+names. They inject invalid clock/deadline values and cover overflow, unchanged
+session state and authority, ordinary lifecycle cleanup, same-console session
+replacement and reentrant feedback. Callback failures stay privately consumed.
+These targeted reentry checks assume ordinary engine getters are observational;
+they do not claim atomicity against arbitrary hostile accessor side effects.
 
 Reselection tests relay actual client setup packets into the server callbacks
 and exercise `!setEntity`, Use and completion. They cover same-creator terminals
@@ -1103,6 +1137,11 @@ emulated. Before a live rollout, use a test server to check:
   and while your setup/edit drafts and locator are open; verify they stay intact
   and both linked brush-door classes remain locked. Try idle/repeated requests,
   near-match text and a dead player; confirm no unrelated cleanup or release
+- Enter `!hackStatus` during login and downloads, at/after the minimum deadline,
+  and with a missing terminal page. Check requester-only delivery, useful name
+  wrapping, no UI change or success claim, and unchanged normal completion.
+  Repeat without a tool and while another player hacks; after quitting, confirm
+  it reports no session. Check its entry in `!slicerHelp hacking`
 - Strip or switch away from the hacking tool during each completion flow;
   confirm no success is printed, the terminal remains available and another
   player can use it. Re-equip and retry normally
