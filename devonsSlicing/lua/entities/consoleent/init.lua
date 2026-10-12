@@ -216,7 +216,7 @@ local slicerHelp = {
         "Browse your own consoles while alive; these commands need no hacking tool or eye target.",
         "!listConsoles [<page> [<state>]]: list; !nearConsoles [<page> [<state>]]: nearest first.",
         "!findConsoles <page> <text>: search saved names literally (ASCII case-insensitive).",
-        "!listConsoles <page> <state> <text>: combine state and name; setup does not accept text.",
+        "!listConsoles <page> <state> <text> or !nearConsoles <page> <state> <text>: combine state and name; setup does not accept text.",
         "States: setup, unlinked, unconfirmed, linked, reserved. Pages: 1-7 digits, no leading zero.",
         "Text: 1-128 bytes, no edge spaces or controls. Use one ASCII space between arguments.",
         "!locateConsole <row> marks a row; !locateConsole clear hides your marker.",
@@ -615,17 +615,19 @@ local function showConsolePage(ply, page, query, state, origin)
     local pages = math.ceil(total / consolesPerPage)
     local messages = {}
     if total == 0 then
-        messages[1] = query and state and ("No matching console names in state '" .. state .. "'. Use !listConsoles 1 " .. state .. " for all consoles in that state.")
+        messages[1] = origin and query and ("No matching console names (" .. state .. ") for '" .. query .. "'. Use !nearConsoles 1 " .. state .. " for all in that state.")
+            or query and state and ("No matching console names in state '" .. state .. "'. Use !listConsoles 1 " .. state .. " for all consoles in that state.")
             or query and "No matching console names. Use !listConsoles for all your consoles, including those needing setup."
             or state and ("You have no consoles matching state '" .. state .. "'.")
             or "You have no consoles."
     elseif page > pages then
-        messages[1] = origin and ("Console page must be between 1 and " .. pages .. ". Use !nearConsoles <page>" .. (state and " " .. state or "") .. ".")
+        messages[1] = origin and query and ("Search page must be between 1 and " .. pages .. ". Use !nearConsoles <page> " .. state .. " " .. query)
+            or origin and ("Console page must be between 1 and " .. pages .. ". Use !nearConsoles <page>" .. (state and " " .. state or "") .. ".")
             or query and state and ("Search page must be between 1 and " .. pages .. ". Use !listConsoles <page> " .. state .. " <text>.")
             or query and ("Search page must be between 1 and " .. pages .. ". Use !findConsoles <page> <text>.")
             or ("Console page must be between 1 and " .. pages .. ". Use !listConsoles <page>" .. (state and " " .. state or "") .. ".")
     else
-        messages[1] = (origin and ("Your consoles (nearest-first request snapshot" .. (state and "; " .. state or "") .. "): page ")
+        messages[1] = (origin and ((query and "Your matching consoles" or "Your consoles") .. " (nearest-first request snapshot" .. (state and "; " .. state or "") .. "): page ")
             or query and state and ("Your matching consoles (" .. state .. "): page ")
             or query and "Your matching consoles: page " or state and ("Your consoles (" .. state .. "): page ")
             or "Your consoles: page ") .. page .. " of " .. pages
@@ -639,12 +641,12 @@ local function showConsolePage(ply, page, query, state, origin)
         end
         consoleListings[ply] = {rows = rows, expires = CurTime() + listingLifetime}
         if page < pages then
-            messages[#messages + 1] = origin and ("Next page: !nearConsoles " .. (page + 1) .. (state and " " .. state or "") .. ".")
+            messages[#messages + 1] = origin and ("Next page: !nearConsoles " .. (page + 1) .. (state and " " .. state or "") .. (query and " " .. query or "."))
                 or query and state and ("Next page: !listConsoles " .. (page + 1) .. " " .. state .. " " .. query)
                 or query and ("Next page: !findConsoles " .. (page + 1) .. " " .. query)
                 or ("Next page: !listConsoles " .. (page + 1) .. (state and " " .. state or "") .. ".")
         elseif page > 1 then
-            messages[#messages + 1] = origin and ("First page: !nearConsoles" .. (state and " 1 " .. state or "") .. ".")
+            messages[#messages + 1] = origin and ("First page: !nearConsoles" .. (state and " 1 " .. state or "") .. (query and " " .. query or "."))
                 or query and state and ("First page: !listConsoles 1 " .. state .. " " .. query)
                 or query and ("First page: !findConsoles 1 " .. query)
                 or state and ("First page: !listConsoles 1 " .. state .. ".") or "First page: !listConsoles."
@@ -711,25 +713,35 @@ hook.Add("PlayerSay", "slicerNearConsoles", function(ply, text)
     if ply ~= nil then consoleListings[ply] = nil end
     if not IsValid(ply) or not ply:IsPlayer() or not ply:Alive() then return "" end
 
-    local page, state = 1
+    local page, state, query = 1
     if text ~= nearConsolesCommand then
-        -- Bound before extraction/conversion; state is an exact lowercase word,
-        -- not a name query. The longest suffix is seven digits + unconfirmed.
-        local suffix = #text <= #nearConsolesCommand + 20 and text:sub(#nearConsolesCommand + 1) or ""
+        -- Match list's explicit page/state/literal tail and byte admission.
+        -- The longest command is 162 bytes, including a 128-byte query.
+        local suffix = #text <= 162 and text:sub(#nearConsolesCommand + 1) or ""
         local digits = suffix:match("^ ([1-9][0-9]*)$")
         if not digits then digits, state = suffix:match("^ ([1-9][0-9]*) ([a-z]+)$") end
+        if not digits then digits, state, query = suffix:match("^ ([1-9][0-9]*) ([a-z]+) (.+)$") end
         if not digits or #digits > 7 or (state and state ~= "setup" and state ~= "unlinked" and state ~= "unconfirmed" and state ~= "linked" and state ~= "reserved") then
             ply:ChatPrint("Usage: !nearConsoles, !nearConsoles <page>, or !nearConsoles <page> <state> (1-7 digits, no leading zero; setup, unlinked, unconfirmed, linked, reserved).")
+            return ""
+        end
+        if query and state == "setup" then
+            ply:ChatPrint("Usage: !nearConsoles <page> setup. Setup consoles have no saved name to search.")
+            return ""
+        end
+        if query and not validConsoleQuery(query) then
+            ply:ChatPrint("Usage: !nearConsoles <page> <unlinked|unconfirmed|linked|reserved> <text> (1-7 page digits, no leading zero; 1-128 text bytes, no edge spaces or controls).")
             return ""
         end
         page = tonumber(digits)
     end
     local origin = consolePositionSnapshot(ply)
     if not origin then
-        ply:ChatPrint("Your position is unavailable. Try !nearConsoles" .. (state and " " .. page .. " " .. state or "") .. " again.")
+        ply:ChatPrint(query and ("Your position is unavailable. Retry: !nearConsoles " .. page .. " " .. state .. " " .. query)
+            or ("Your position is unavailable. Try !nearConsoles" .. (state and " " .. page .. " " .. state or "") .. " again."))
         return ""
     end
-    showConsolePage(ply, page, nil, state, origin)
+    showConsolePage(ply, page, query, state, origin)
     return ""
 end)
 

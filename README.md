@@ -284,18 +284,27 @@ consoles. The page uses the same one-space, 1–7 ASCII digits, no-leading-zero
 rules as the full inventory. To narrow proximity to a current state, use exactly
 `!nearConsoles <page> <state>`, for example `!nearConsoles 1 unlinked`. The state
 must be exactly `setup`, `unlinked`, `unconfirmed`, `linked` or `reserved`, with
-one ASCII space before the page and state. State requires an explicit page;
-name queries and any extra text are not supported.
+one ASCII space before the page and state. State requires an explicit page.
+To also narrow by saved name, use exactly
+`!nearConsoles <page> <unlinked|unconfirmed|linked|reserved> <text>`, for example
+`!nearConsoles 1 unlinked reactor west`. The entire remaining text is a literal
+substring, using the same ASCII-only case folding as `!listConsoles` name
+filtering: 1–128 bytes, no leading/trailing ASCII spaces or control characters.
+Numeric names, state words, internal spaces and pattern punctuation stay literal;
+Unicode bytes are not case-folded or normalized. `setup` with text is rejected
+because unconfigured consoles have no saved name to search.
 Malformed recognized arguments get private guidance; command near matches stay
 ordinary chat.
 
 State meanings are the same as `!listConsoles`: `setup` requires absent saved
 configuration, the three link states require valid tools configuration, and
 `reserved` reflects a server-owned active session, independently of a legacy
-busy flag. Filtering happens before distance sampling and pagination. The
-header names the requested state and counts only matching consoles; empty and
-out-of-range replies describe that filtered set. Next/first-page and retry
-guidance retain the state. Link descriptions do not assert a physical lock state.
+busy flag. Both state and name filtering happen before distance sampling and
+pagination. The header names the requested state and counts only matching
+consoles; empty and out-of-range replies describe that filtered set. Next/first-page,
+range and retry guidance retain the state and literal query. Empty search replies
+show the query and offer the same nearest state without the name restriction.
+Link descriptions do not assert a physical lock state.
 
 The header identifies a nearest-first request snapshot. The server samples your
 position once and each matching owned console's position once, then sorts by 3D
@@ -939,10 +948,13 @@ actions with the shared 60-second lease. They check reentrant listing replacemen
 inspection byte budgets, state preservation and exact default list/search replies
 without position calls. Nearest-state tests combine all five existing predicates
 with filtering before pagination, strict syntax, retained hints, snapshot ordering,
-and existing setup/edit/link row authority. The nearest-state change and affected
-regressions ran on the installed Lua 5.4 C-API runner with the unchanged GLua
-translator; native engine vectors, movement and chat behavior still need an
-in-game smoke check.
+and existing setup/edit/link row authority. Nearest-name tests add the four
+state/name intersections, literal byte and Unicode boundaries, bounded query-aware
+guidance, exact row actions and output-callback replacement. A real-handler
+workflow keeps pending setup/edit replies, selections and a live hack's original
+deadline usable while locating matching nearest rows. These API doubles do not
+verify native engine accessor atomicity, vectors, rendering, chat delivery or
+network behavior; those still need an in-game smoke check.
 
 Console-search tests exercise actual PlayerSay callbacks for byte limits,
 literal ASCII folding, Unicode distinctions, private ownership filtering,
@@ -1096,7 +1108,10 @@ emulated. Before a live rollout, use a test server to check:
   Repeat with `!nearConsoles 1 setup`, `unlinked`, `unconfirmed`, `linked` and
   `reserved`; check filtered counts and state-preserving page hints. Change a
   listed console's state and verify the old row retains that exact console while
-  actions enforce its current eligibility
+  actions enforce its current eligibility. Repeat with a literal name tail, such as
+  `!nearConsoles 1 unlinked reactor west`, in each named state. Check that closer
+  nonmatching names do not take page slots, hints preserve the query, and an old
+  row stays bound after renaming or moving the console
 - With more than five owned consoles, use `!listConsoles` and its next-page
   commands. Check private replies, full-length ASCII/multibyte names, deferred
   setup and same-name copies. List while setup/edit forms or a live hack are

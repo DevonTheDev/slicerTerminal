@@ -109,7 +109,7 @@ return function(gmod, test, equal)
         function owner:GetPos() error("Invalid state grammar sampled") end
         for _, suffix in ipairs({" setup", " reserved", " 0 setup", " 01 setup", " -1 setup", " +1 setup",
             " 1.0 setup", " 1e1 setup", " ١ setup", "  1 setup", " 1  setup", " 1 setup ",
-            " 1 setup extra", " 1 linked reactor", " 1 reserved reactor", " 1 SETUP", " 1 Setup",
+            " 1 SETUP", " 1 Setup",
             " 1 unknown", " 1 set", " 1 unconfirmedx", " 10000000 unconfirmed", " 1 ",
             "\t1 setup", "\n1 setup", " 1\tsetup", " 1\nsetup", " 1 setup\0", " 1 setup\127",
             " 1 setup\194\133", " 1 setup\226\128\168", " 1 setup\226\128\169", " " .. string.rep("9", 200000) .. " setup"}) do
