@@ -220,6 +220,7 @@ local slicerHelp = {
         "States: setup, unlinked, unconfirmed, linked, reserved. Pages: 1-7 digits, no leading zero.",
         "Text: 1-128 bytes, no edge spaces or controls. Use one ASCII space between arguments.",
         "!locateConsole <row> marks a row; !locateConsole clear hides your marker.",
+        "!inspectConsole <row> privately shows the saved name, folder, base delay and filename, including while busy.",
         "Rows 1-5 mean exact entities on your last list/find/near page for up to 60 seconds; row actions do not renew that deadline.",
         "A new list/find/near request replaces the page; malformed or empty requests clear its rows. Current ownership and eligibility still apply.",
     },
@@ -348,16 +349,19 @@ hook.Add("PlayerSay", "doesThePlayerSetAnEntity", function(ply, text)
     return ""
 end)
 
-local function inspectionLabel(console)
-    local information = console.SlicerInformation
+local function inspectionText(text)
+    return (text:gsub("[%z\1-\31\127]", "?"):gsub("\194[\128-\159]", "?")
+        :gsub("\226\128[\168\169]", "?"))
+end
+
+local function inspectionLabel(console, information)
+    information = information or console.SlicerInformation
     local name = type(information) == "table" and information.name or nil
     local label = "Console"
     if type(name) == "string" and #name <= 128 and string.Trim(name) ~= "" then
         -- Sanitize only the displayed copy. Keeping the whole bounded name
         -- avoids cutting a valid multibyte character at ChatPrint's byte limit.
-        name = name:gsub("[%z\1-\31\127]", "?"):gsub("\194[\128-\159]", "?")
-            :gsub("\226\128[\168\169]", "?")
-        label = label .. " '" .. name .. "'"
+        label = label .. " '" .. inspectionText(name) .. "'"
     end
     -- Native creation IDs wrap; these are current labels, never authority.
     return label .. " (current ID #" .. console:GetCreationID() .. "): "
@@ -688,6 +692,43 @@ function slicerListedConsole(ply, row)
     if not IsValid(console) or console:GetClass() ~= "consoleent" or console.SlicerCreator ~= ply then return end
     return console
 end
+
+hook.Add("PlayerSay", "slicerInspectConsole", function(ply, text)
+    local row = type(text) == "string" and #text == 17 and text:match("^!inspectConsole ([1-5])$")
+    if not row then return end
+    if not IsValid(ply) or not ply:IsPlayer() or not ply:Alive() then return "" end
+    local console = slicerListedConsole(ply, tonumber(row))
+    if not console then
+        ply:ChatPrint("That console row is unavailable or expired. Use !listConsoles, !findConsoles or !nearConsoles again, then !inspectConsole <row>.")
+        return ""
+    end
+    local information = console.SlicerInformation
+    -- Validate separate captured fields, keeping the original saved spelling.
+    -- Inspection grants no ticket and does not require an idle console.
+    local saved = type(information) == "table" and {
+        name = information.name, delay = information.delay,
+        fileType = information.fileType, fileName = information.fileName,
+    } or nil
+    local label, messages = inspectionLabel(console, saved)
+    if information == nil then
+        messages = {label .. "needs setup. Use it to configure it."}
+    elseif not normalizeSlicerInformation(saved) then
+        messages = {label .. "invalid configuration."}
+    else
+        -- Match the editor's exact round-trip representation of the base delay.
+        local delay = tostring(saved.delay)
+        if tonumber(delay) ~= saved.delay then delay = string.format("%.17g", saved.delay) end
+        messages = {
+            label .. "saved configuration:",
+            "Folder: " .. saved.fileType .. "; configured base delay: " .. delay .. " seconds.",
+            "Saved filename (no extension): '" .. inspectionText(saved.fileName) .. "'.",
+        }
+    end
+    -- Capture all lines before ChatPrint can remove or edit the entity. No
+    -- saved-state reads after feedback starts can mix two configurations.
+    for _, message in ipairs(messages) do ply:ChatPrint(message) end
+    return ""
+end)
 
 hook.Add("PlayerSay", "slicerSetupListedConsole", function(ply, text)
     local digits = #text == 15 and text:match("^!setupConsole ([1-5])$")

@@ -172,6 +172,23 @@ The reply describes the addon's registered link, not the door's physical lock
 state under other map logic or protection addons. Native chat delivery,
 targeting and long-name font readability still need an in-game smoke check.
 
+### Inspect saved console settings
+
+After `!listConsoles`, `!findConsoles` or `!nearConsoles`, type exactly
+`!inspectConsole 1` through `!inspectConsole 5` to inspect that row. Use one
+ASCII space and one digit; bare, malformed and near-match commands remain
+ordinary chat. Rows refer to exact entities on your latest page for 60 seconds;
+inspection does not renew that deadline. Relist when a row is unavailable.
+
+Only the living current creator can inspect a console. No tool, eye target or
+distance check is required, and busy consoles remain inspectable. Three private
+lines show its saved name/current ID, folder, configured **base delay in seconds**
+and saved filename without adding an extension. The delay is not remaining hack
+time. Original spelling and edge spaces are preserved; controls are cleaned only
+for display. Unconfigured consoles receive setup guidance; malformed saved data
+is reported as invalid. Inspection changes no settings, forms, selection, marker,
+door links or hacking session, and completes its reply from one captured snapshot.
+
 ### List your consoles
 
 Type `!listConsoles` in chat for a private inventory of your current consoles,
@@ -1036,6 +1053,9 @@ emulated. Before a live rollout, use a test server to check:
 - Inspect each console and door with `!inspectLink` as its creator, including
   while another player is hacking. Check private replies, unchanged deadlines,
   same-name copy IDs, and readability of long and multibyte console names
+- Use `!inspectConsole 1` after list/find/near pages, including during a hack.
+  Check the three private saved-setting lines, long/multibyte filenames, original
+  draft and hack timing, and refusal when ownership changes or the row expires
 - Place owned consoles at different heights and distances, then use
   `!nearConsoles` and its page hints. Move before requesting another page and
   check the snapshot order, private replies and exact locate/edit/select rows
