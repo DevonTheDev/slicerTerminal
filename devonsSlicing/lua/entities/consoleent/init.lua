@@ -62,7 +62,7 @@ function ENT:Initialize()
     self:SetModel(returnEntityModel())
     self:SetSolid(SOLID_BBOX)
     self:SetUseType(SIMPLE_USE)
-    -- Counting live consoles reuses names when an earlier console is removed.
+    -- Runtime names follow creation IDs, independently of the live count.
     self:SetName("DevonsConsoleEntity" .. self:GetCreationID())
 end
 
@@ -115,12 +115,16 @@ function ENT:PostEntityPaste(ply)
     end
 end
 
-local function openSetup(ply, ent)
-    if not IsValid(ply) or not ply:IsPlayer() or not ply:Alive() then return end
+local function openSetup(ply, ent, listed)
+    if not IsValid(ply) or not ply:IsPlayer() or (listed and not IsValid(ply)) or not ply:Alive() then return end
+    -- Listed entry checks its captured context after this actor check. Keep the
+    -- physical spawn/Use path and its existing two-field message unchanged.
+    if listed and not listed.current() then return end
     net.Start("PlayerSpawnedConsole")
         net.WriteEntity(ply)
-        net.WriteString(ent:GetName())
+        net.WriteString(listed and listed.name or ent:GetName())
     net.Send(ply)
+    return true
 end
 
 hook.Add("PlayerSpawnedSENT", "checkForConsole", function(ply, ent)
@@ -621,6 +625,81 @@ function slicerListedConsole(ply, row)
     if not IsValid(console) or console:GetClass() ~= "consoleent" or console.SlicerCreator ~= ply then return end
     return console
 end
+
+hook.Add("PlayerSay", "slicerSetupListedConsole", function(ply, text)
+    local digits = #text == 15 and text:match("^!setupConsole ([1-5])$")
+    if not digits then return end
+    local row = tonumber(digits)
+    -- Capture the actual page object, so a callback that prints a newer page
+    -- cannot authorize this earlier request even when the row is identical.
+    local listing = ply ~= nil and consoleListings[ply] or nil
+    local console = listing and listing.rows[row] or nil
+    local function actorCurrent()
+        if not IsValid(ply) or not ply:IsPlayer() or not IsValid(ply) then return false end
+        return ply:Alive() and IsValid(ply)
+    end
+    local function rowCurrent()
+        return listing ~= nil and consoleListings[ply] == listing and listing.rows[row] == console
+            and CurTime() < listing.expires and consoleListings[ply] == listing
+    end
+    local function refuse(unavailable)
+        if actorCurrent() then
+            ply:ChatPrint(unavailable
+                and "That console row is unavailable or expired. Use !listConsoles, !findConsoles or !nearConsoles again, then !setupConsole <row>."
+                or "That listed console is not eligible for initial setup. It must be your unconfigured, unreserved console with a unique runtime name.")
+        end
+        return ""
+    end
+    if not actorCurrent() then return "" end
+    if not rowCurrent() or not IsValid(console) or console:GetClass() ~= "consoleent"
+        or not IsValid(console) or console.SlicerCreator ~= ply then return refuse(true) end
+
+    -- IDs only check this operation's consistency; the stored reference alone
+    -- chooses the entity. Check validity between callback-capable accessors.
+    local name = console:GetName()
+    if not IsValid(console) then return refuse(true) end
+    local creationID = console:GetCreationID()
+    if not IsValid(console) then return refuse(true) end
+    local entityIndex = console:EntIndex()
+    if type(name) ~= "string" or #name == 0 or #name > 256 or name:find("%z") then return refuse(false) end
+    local function entityCurrent()
+        if not IsValid(console) or console:GetClass() ~= "consoleent" or not IsValid(console)
+            or console.SlicerCreator ~= ply or console.SlicerInformation ~= nil then return false end
+        local currentName = console:GetName()
+        if not IsValid(console) then return false end
+        local currentID = console:GetCreationID()
+        if not IsValid(console) then return false end
+        local currentIndex = console:EntIndex()
+        return IsValid(console) and currentName == name and currentID == creationID and currentIndex == entityIndex
+            and console.SlicerCreator == ply and console.SlicerInformation == nil
+    end
+    local function current()
+        if not actorCurrent() or not rowCurrent() then return false end
+        if type(slicerListedConsole) ~= "function" or slicerListedConsole(ply, row) ~= console
+            or not entityCurrent() or slicerConsoleHasActiveSession(console) then return false end
+        -- Initial forms and saves use this raw name. Include configured owned
+        -- siblings in the ambiguity check; foreign creators have separate forms.
+        local matches, candidate = 0, nil
+        for _, sibling in ipairs(ents.FindByClass("consoleent")) do
+            if IsValid(sibling) and sibling:GetClass() == "consoleent" and IsValid(sibling)
+                and sibling.SlicerCreator == ply then
+                local siblingName = sibling:GetName()
+                if IsValid(sibling) and sibling.SlicerCreator == ply and siblingName == name then
+                    matches, candidate = matches + 1, sibling
+                end
+            end
+        end
+        -- Scan/accessor callbacks may remove, reconfigure, rename or relist.
+        -- Recheck the captured target and lease before any opening is emitted.
+        return matches == 1 and candidate == console and entityCurrent() and actorCurrent()
+            and IsValid(console) and console.SlicerCreator == ply and console.SlicerInformation == nil
+            and not slicerConsoleHasActiveSession(console) and rowCurrent()
+    end
+    if not current() then return refuse(not rowCurrent() or not IsValid(console) or console.SlicerCreator ~= ply) end
+    -- No target-name accessor runs after the final guard inside openSetup.
+    if not openSetup(ply, console, {name = name, current = current}) then return refuse(not rowCurrent()) end
+    return ""
+end)
 
 hook.Add("PlayerSay", "slicerLocateConsole", function(ply, text)
     if text ~= "!locateConsole" and not text:find("^!locateConsole%s") then return end

@@ -351,6 +351,53 @@ cannot overwrite them. Updated client files are required for the acknowledged
 form flow. Legacy five-field setup packets retain their original server
 validation and do not receive a correlated acknowledgement.
 
+### Open initial setup from a listed row
+
+After `!listConsoles`, `!findConsoles` or `!nearConsoles`, type exactly
+`!setupConsole 1` through `!setupConsole 5` to open the existing initial form
+for that exact row. Use one ASCII space and one digit. Bare commands, extra
+spaces or arguments, different case and other row spellings remain ordinary
+chat. The command works at a distance without an eye target or hacking tool.
+
+You must be the living creator of an unconfigured console with no active hack
+on that console. Configured consoles, including an accepted setup whose reply
+is still pending, are refused. Use the separate saved editor for configured
+consoles. The current raw runtime name must be nonempty, at most 256 bytes,
+without a NUL byte, and unique among your live consoles, including configured
+ones. A same-name console owned by another creator does not cause ambiguity.
+
+This uses the same private five-row page and 60-second deadline as locating,
+listed editing and listed link selection. A new recognized list/find/near
+request replaces the page, even when invalid or empty. Opening neither consumes
+nor renews it; a row expires at exactly 60 seconds. Current entity, creator,
+configuration and reservation checks run again before opening. A removed row
+cannot select a replacement by name or numeric ID. Request a new page after an
+unavailable-row refusal.
+
+Repeated listed opening or physical Use raises the same current initial form
+and retains its typed draft or locked pending submission. Different targets
+keep separate forms. Dismissal discards a draft; reopening starts blank. Opening
+does not configure anything, reserve a hack, choose a door, change an editor or
+receipt, move the locator marker, or disturb another session or its deadline.
+Page replacement or expiry does not revoke a form already opened. Saving keeps
+the existing creator, configuration and name-ambiguity admission; the page is
+an opening reference, not a save ticket. Initial save still has its existing
+valid-player admission and does not add a living-player requirement at save time.
+
+If setup was accepted but its reply was lost, `!setupConsole <row>` refuses the
+now configured target and leaves its pending form locked. Choose that form's
+**Check setup result** to query the original receipt. An unconfirmed result
+does not unlock or resend the submission.
+
+The exact-entity guarantee applies to opening. Initial forms and their existing
+five-field legacy or six-field correlated saves remain keyed by runtime name.
+The new command refuses a present same-owner collision; it does not bind an
+old form or delayed save to an entity for its whole lifetime if an external
+rename later reuses a removed entity's name. Ordinary removal and paste use
+`GetCreationID()` names rather than live console counts. Eventual native ID wrap
+remains the existing naming boundary described above. Lifetime binding under
+external name reuse or ID wrap would require a separate form/wire/save change.
+
 ### Check a missing initial setup reply
 
 While the original form is still pending, choose **Check setup result** to ask
@@ -813,6 +860,17 @@ the actual server's creator and first-write validation. The geometry model does
 not certify native rendering, mouse hit-testing, dropdowns, font dimensions,
 tab order or display resizing; the shared panel doubles remain unchanged.
 
+Listed-initial-setup tests use the real public chat callbacks and relay the
+existing initial form's submissions and acknowledgement/result requests. They
+cover exact row grammar, private current pages, strict expiry, current eligibility
+and name ambiguity, callback-driven context changes, removed references, normal
+CreationID-based paste names, repeated/dismissed/pending forms, legacy saves and
+unchanged unrelated hacks, editors, receipts, markers and door choices. Their
+Entity/String call recording and Derma substitutes do not establish native wire
+encoding, visual focus or multiplayer behavior. External historical name reuse
+and eventual native ID wrap remain existing protocol limits, not lifetime-binding
+tests or behaviors this opening command fixes.
+
 The original client source uses CRLF line endings, which this change preserves.
 To check whitespace without treating CRLF as trailing whitespace:
 
@@ -826,6 +884,21 @@ These tests do **not** replace a Garry's Mod server/client smoke test. Rendering
 assets, physics/Use reach, engine networking and multiplayer timing are not
 emulated. Before a live rollout, use a test server to check:
 
+- With two players, defer an ordinary console and paste an unconfigured copy.
+  From a distance list/find/near them, open the intended row with
+  `!setupConsole <row>`, and check private delivery and one existing initial form.
+  Try every exact row, near-match chat text, another creator, configured targets,
+  a removed row, relisting and the exact 60-second boundary without waiting for
+  cleanup. Verify native PlayerSay consumption and Entity/String wire delivery
+- Type a listed initial draft, repeat its command and physical Use, dismiss and
+  reopen it, then submit and repeat while pending. Check actual Derma focus,
+  typing, locked fields and no duplicate submission. Lose an accepted reply:
+  reopening must refuse the configured target while Check setup result confirms
+  its original receipt. Unconfirmed checks must remain uncertain without replay
+- Keep an unrelated active hack, saved editor, locator and pending door choice
+  open while doing listed setup. Check their deadlines, drafts and link choice
+  survive. Repeat native death/disconnect and paste lifecycles, and verify physical
+  creator Use still opens unconfigured setup while configured Use follows hacking
 - List or search two same-name consoles, open row 2 with `!editConsole 2`, type a
   draft, then repeat the row command and bare eye-trace command for that console.
   Verify one form retains the draft, save it, and hack the renamed console using
