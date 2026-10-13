@@ -103,6 +103,13 @@ cleanup keep their clearing behavior. A newer choice made during feedback is
 preserved. Obsolete replies are suppressed after the checked synchronous
 accessors replace, cancel, remove or change ownership of the captured choice.
 
+To find that exact selected console, use `!locateConsole pending`. The private
+15-second location snapshot remains available after catalogue replacement or
+expiry and after respawning, while the selected console is live and still yours.
+It does not promise that the console can currently link; final linking keeps its
+existing checks. Cancellation after a successful locate leaves the location
+snapshot until its ordinary clear, expiry or death behavior dismisses it.
+
 ### Cancel a pending door selection
 
 Type exactly `!cancelLink` in chat to clear your own pending door-link selection.
@@ -383,7 +390,7 @@ Search needs a living player but no tool or target; it preserves settings,
 pending links, setup/edit forms, active hacks and deadlines. It sends private
 chat only and leaves any existing location marker alone.
 
-### Locate a listed or found console
+### Locate a listed, found or pending console
 
 After `!listConsoles`, `!findConsoles` or `!nearConsoles`, type `!locateConsole 2`
 to mark row 2 of your most recently shown catalogue page. Rows 1–5 refer to the
@@ -397,12 +404,25 @@ eligible live console as the same row, using its current name and position.
 Locating does not confirm that the previously displayed state still applies.
 Clearing the marker leaves unexpired rows usable.
 
+Type exactly `!locateConsole pending` to mark your existing pending door-link
+choice instead of a row. It uses that exact live console only while you still
+own it, without consulting a catalogue, eye target, weapon, name or creation ID.
+Catalogue replacement and the exact row deadline do not expire this choice.
+Configuration, busy/reservation state and a live or removed saved door do not
+block location; the normal link command still rechecks its own requirements.
+No choice or an unavailable choice gives one private line without clearing the
+choice, previous marker or current rows. Read failures or non-finite/unavailable
+positions send no location packet. Saved names are cleaned only for display,
+and only finite integral numeric IDs from 0 through 10000000 are shown as labels.
+If checked synchronous accessors replace/cancel the choice, remove it, change
+its ownership/class or retire the requester, the obsolete result is suppressed.
+
 A successful request sends only you a 15-second location marker with the console's
 label, sampled position, distance in Source units and above/below guidance. Offscreen
 or behind-you locations get an edge cue. This is a location snapshot: it does not
 follow a console moved afterward or confirm that it still exists. Another successful
 locate replaces the marker; `!locateConsole clear`, expiry or death dismisses it.
-Use exactly one ASCII space followed by one row digit, or `clear`.
+Use exactly one ASCII space followed by one row digit, `pending`, or `clear`.
 
 Walk to the marker and use the normal setup, edit or linking controls. Locating
 works without looking at the console and preserves pending links, edit forms,
@@ -1061,6 +1081,19 @@ git -c core.whitespace=cr-at-eol diff --check
 These tests do **not** replace a Garry's Mod server/client smoke test. Rendering,
 assets, physics/Use reach, engine networking and multiplayer timing are not
 emulated. Before a live rollout, use a test server to check:
+
+- Select console A, replace its catalogue with B, then run `!locateConsole pending`
+  from outside A's PVS. Confirm only the requester sees A's safe label and sampled
+  position while row 1 still locates B. Repeat at the exact 60-second row deadline
+  and after death/respawn, then link and hack A through each supported brush-door
+  class. Verify only A's door unlocks. Try removed/foreign selections and unavailable
+  coordinates with a prior marker; refusal must preserve the marker and selection.
+  Keep initial/edit acknowledgements, an unsaved draft and another hack active;
+  verify original deadlines, forms, focus and other players' choices survive.
+  Check the unchanged packet's native vector encoding and requester privacy,
+  15-second replacement/expiry, clear/death, HUD-addon compatibility and font fit.
+  Native GMod transport, projection, rendering, focus and actual door inputs remain
+  unavailable and unverified by the Lua API-double tests.
 
 - Ask for `!slicerHelp` and each topic alive and dead with another player nearby.
   Check requester-only replies, readable complete lines, malformed usage and

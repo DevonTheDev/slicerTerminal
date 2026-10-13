@@ -219,7 +219,7 @@ local slicerHelp = {
         "!listConsoles <page> <state> <text> or !nearConsoles <page> <state> <text>: combine state and name; setup does not accept text.",
         "States: setup, unlinked, unconfirmed, linked, reserved. Pages: 1-7 digits, no leading zero.",
         "Text: 1-128 bytes, no edge spaces or controls. Use one ASCII space between arguments.",
-        "!locateConsole <row> marks a row; !locateConsole clear hides your marker.",
+        "!locateConsole <row> marks a row; !locateConsole pending marks your selected console; !locateConsole clear hides your marker.",
         "!inspectConsole <row> privately shows the saved name, folder, base delay and filename, including while busy.",
         "Rows 1-5 mean exact entities on your last list/find/near page for up to 60 seconds; row actions do not renew that deadline.",
         "A new list/find/near request replaces the page; malformed or empty requests clear its rows. Current ownership and eligibility still apply.",
@@ -237,6 +237,7 @@ local slicerHelp = {
         "!setEntity <row> selects an eligible console from your last list/find/near page (1-5, up to 60 seconds).",
         "Supported doors: func_door and func_door_rotating. !cancelLink clears only your pending selection.",
         "!pendingLink privately shows your current pending console, without an eye target or tool; linking rechecks eligibility.",
+        "!locateConsole pending marks your live owned selection for 15 seconds, even after its catalogue page expires or changes.",
         "!inspectLink: look at your console or its registered door for private link information.",
         "!unlinkConsole: look at your configured, idle tools console to clear its registered live link and send Unlock to the old door.",
         "!resetLink: look at your configured, idle tools console to clear a removed door's old link before selecting a replacement.",
@@ -921,6 +922,64 @@ end)
 
 hook.Add("PlayerSay", "slicerLocateConsole", function(ply, text)
     if text ~= "!locateConsole" and not text:find("^!locateConsole%s") then return end
+    if text == "!locateConsole pending" then
+        -- Keep this exact-pointer path independent of catalogue lease cleanup.
+        -- Native accessor/reply failures still consume recognized private chat.
+        pcall(function()
+            if not IsValid(ply) or not ply:IsPlayer() or not ply:Alive() then return end
+            local console = ply.SlicerPendingConsole
+            local live = console ~= nil and IsValid(console)
+            local creator, class
+            if live then
+                creator = console.SlicerCreator
+                class = console:GetClass()
+            end
+            local message = "You have no pending door-link selection."
+            local label, position
+            if console ~= nil then
+                message = "Your pending door-link selection is unavailable. Use !cancelLink, or !setEntity on an eligible console to select again."
+                if live and class == "consoleent" and creator == ply then
+                    local information = console.SlicerInformation
+                    local name = type(information) == "table" and information.name
+                    label = "Console"
+                    if type(name) == "string" and #name <= 128 and string.Trim(name) ~= "" then
+                        label = label .. " '" .. inspectionText(name) .. "'"
+                    end
+                    local getID = console.GetCreationID
+                    local id = type(getID) == "function" and getID(console)
+                    if type(id) == "number" and id >= 0 and id <= 10000000 and id == math.floor(id) then
+                        label = label .. " (current ID #" .. string.format("%.0f", id) .. ")"
+                    end
+                    local center = console:WorldSpaceCenter()
+                    local x, y, z
+                    if center ~= nil then x, y, z = center.x, center.y, center.z end
+                    local function finite(value)
+                        return type(value) == "number" and value == value and value > -math.huge and value < math.huge
+                    end
+                    if finite(x) and finite(y) and finite(z) and #label <= 240 then
+                        position = Vector(x, y, z)
+                        message = nil
+                    else
+                        message = "Your pending console's position is unavailable. Try !locateConsole pending again later."
+                    end
+                end
+            end
+            -- Finish all display/accessor reads before the final identity guard.
+            -- Never restore a selection changed synchronously by an accessor.
+            local feedback = message and ply.ChatPrint
+            if (console ~= nil and IsValid(console)) ~= live then return end
+            if live and (console:GetClass() ~= class or console.SlicerCreator ~= creator or not IsValid(console)) then return end
+            if not IsValid(ply) or not ply:IsPlayer() or not ply:Alive() then return end
+            if ply.SlicerPendingConsole ~= console then return end
+            if message then feedback(ply, message); return end
+            net.Start("SlicerConsoleLocation")
+                net.WriteBool(true)
+                net.WriteString(label)
+                net.WriteVector(position)
+            net.Send(ply)
+        end)
+        return ""
+    end
     if not IsValid(ply) or not ply:IsPlayer() or not ply:Alive() then
         if ply ~= nil then consoleListings[ply] = nil end
         return ""
@@ -933,7 +992,7 @@ hook.Add("PlayerSay", "slicerLocateConsole", function(ply, text)
     end
     local row = #text == 16 and text:match("^!locateConsole ([1-5])$")
     if not row then
-        ply:ChatPrint("Usage: !locateConsole <row> (1-5 from your last !listConsoles or !findConsoles page), or !locateConsole clear.")
+        ply:ChatPrint("Usage: !locateConsole <row> (1-5 from your last catalogue page), !locateConsole pending, or !locateConsole clear.")
         return ""
     end
     local console = slicerListedConsole(ply, tonumber(row))

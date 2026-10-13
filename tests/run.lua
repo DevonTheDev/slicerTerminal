@@ -660,6 +660,8 @@ dofile("tests/console-filtered-search-workflow.lua")(gmod, test, equal)
 dofile("tests/console-locator.lua")(gmod, test, equal)
 dofile("tests/console-locator-client.lua")(gmod, test, equal)
 dofile("tests/console-locator-workflow-review.lua")(gmod, test, equal)
+dofile("tests/pending-locator.lua")(gmod, test, equal)
+dofile("tests/pending-locator-workflow.lua")(gmod, test, equal)
 
 print(string.format("\n%d passed, %d failed", passed, failed))
 if failed > 0 then os.exit(1) end
