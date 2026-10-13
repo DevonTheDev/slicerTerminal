@@ -446,7 +446,8 @@ hook.Add("PlayerSay", "slicerResetLink", function(ply, text)
     end
     local door, message = console.SlicerDoor
     if door == nil then
-        message = "has no link to reset. Use !setEntity to select it."
+        message = row and "has no link to reset. !listConsoles again; find this console, then !setEntity <row>."
+            or "has no link to reset. Use !setEntity to select it."
     elseif IsValid(door) then
         message = "still has an available door; its link was not changed."
     else
@@ -456,7 +457,8 @@ hook.Add("PlayerSay", "slicerResetLink", function(ply, text)
             or CurTime() >= listing.expires or consoleListings[ply] ~= listing) then return unavailable() end
         console.SlicerDoor = nil
         if linkedDoors[door] == console then linkedDoors[door] = nil end
-        message = "old link cleared. Use !setEntity on this console, then on a replacement door."
+        message = row and "old link cleared. !listConsoles again; find this console, then !setEntity <row>."
+            or "old link cleared. Use !setEntity on this console, then on a replacement door."
     end
     ply:ChatPrint(inspectionLabel(console) .. message)
     return ""
@@ -491,9 +493,11 @@ hook.Add("PlayerSay", "slicerUnlinkConsole", function(ply, text)
     end
     local label, door, message = inspectionLabel(console), console.SlicerDoor
     if door == nil then
-        message = "has no door link. Use !setEntity to select it."
+        message = row and "has no door link. !listConsoles again; find this console, then !setEntity <row>."
+            or "has no door link. Use !setEntity to select it."
     elseif not IsValid(door) then
-        message = "previous door is no longer available. Use !resetLink on this console."
+        message = row and "door no longer available. !listConsoles again; find this console, then !resetLink <row>."
+            or "previous door is no longer available. Use !resetLink on this console."
     elseif not supportedDoors[door:GetClass()] or linkedDoors[door] ~= console then
         message = "no registered link can be confirmed; nothing was changed."
     else
@@ -506,7 +510,8 @@ hook.Add("PlayerSay", "slicerUnlinkConsole", function(ply, text)
         console.SlicerDoor, linkedDoors[door] = nil, nil
         local sent = pcall(door.Fire, door, "Unlock")
         message = sent
-            and "old link cleared; Unlock sent. If still unlinked, use !setEntity here, then on a door."
+            and (row and "old link cleared; Unlock sent. If still unlinked, !listConsoles; find it; !setEntity <row>"
+                or "old link cleared; Unlock sent. If still unlinked, use !setEntity here, then on a door.")
             or "old link cleared; Unlock failed. Check the previous door before using !setEntity."
     end
     -- Native input may remove either entity. Report the captured old association

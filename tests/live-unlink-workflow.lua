@@ -67,7 +67,11 @@ return function(gmod, test, equal)
             equal(server.returnSpawnedEntities()[1], registration)
             equal(console.SlicerDoor, nil); equal(#oldDoor.inputs, 2); equal(oldDoor.inputs[2], "Unlock")
             equal(server.fire("PlayerUse", hacker, oldDoor), nil)
-            if not listed then
+            if listed then
+                assert(owner.chats[#owner.chats]:find("old link cleared; Unlock sent. If still unlinked, !listConsoles; find it; !setEntity <row>", 1, true))
+                equal(server.fire("PlayerSay", owner, "!listConsoles"), "")
+                equal(server.slicerListedConsole(owner, 1), console, "Identify the intended console on the fresh page before selecting it")
+            else
                 equal(say(server, owner, console, "!inspectLink"), "")
                 assert(owner.chats[#owner.chats]:find("has no door link", 1, true))
             end

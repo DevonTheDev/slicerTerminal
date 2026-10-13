@@ -136,6 +136,37 @@ return function(gmod, test, equal)
         end
     end
 
+    -- These replies must lead back through a fresh catalogue, never imply that
+    -- a previously displayed row still identifies this console after callbacks.
+    for _, listed in ipairs({false, true}) do
+        for _, cleared in ipairs({false, true}) do
+            test((listed and "listed" or "aimed") .. " reset recovery wording with " .. (cleared and "cleared" or "no") .. " link", function()
+                for _, name in ipairs({string.rep("n", 128), string.rep("界", 42) .. "é"}) do
+                    local env = gmod.new()
+                    local owner, observer = env.player(), env.player()
+                    local console = configured(env, owner, "tools", name)
+                    local door
+                    if cleared then door = link(env, owner, console); door:Remove() end
+                    console.id = 10000000
+                    if listed then equal(env.fire("PlayerSay", owner, "!listConsoles"), "") end
+                    local others = #observer.chats
+                    local text = listed and listedReset(env, owner, 1, console, door) or reset(env, owner, console, door)
+                    local label = "Console '" .. name .. "' (current ID #10000000): "
+                    local message
+                    if listed then
+                        message = (cleared and "old link cleared. " or "has no link to reset. ")
+                            .. "!listConsoles again; find this console, then !setEntity <row>."
+                    else
+                        message = cleared and "old link cleared. Use !setEntity on this console, then on a replacement door."
+                            or "has no link to reset. Use !setEntity to select it."
+                    end
+                    equal(text, label .. message)
+                    equal(console.SlicerInformation.name, name); equal(#observer.chats, others)
+                end
+            end)
+        end
+    end
+
     for _, command in ipairs({"!listConsoles", "!findConsoles 1 terminal", "!nearConsoles"}) do
         test("listed reset keeps exact entities after duplicate IDs and an earlier removal via " .. command, function()
             local env = gmod.new()

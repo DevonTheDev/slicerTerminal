@@ -91,6 +91,46 @@ return function(gmod, test, equal)
         end
     end
 
+    for _, listed in ipairs({false, true}) do
+        for _, state in ipairs({"no link", "removed door", "live door"}) do
+            test((listed and "listed" or "aimed") .. " unlink recovery wording for " .. state, function()
+                for _, name in ipairs({string.rep("n", 128), string.rep("界", 42) .. "é"}) do
+                    local env = gmod.new()
+                    local owner, observer = env.player(), env.player()
+                    local console = configured(env, owner, name)
+                    local door
+                    if state ~= "no link" then door = link(env, owner, console) end
+                    if state == "removed door" then door:Remove() end
+                    console.id = 10000000
+                    if listed then list(env, owner); noTarget(owner) end
+                    local others = #observer.chats
+                    local text = unlink(env, owner, console, state == "live door" and door or nil, listed and 1 or nil)
+                    local label = "Console '" .. name .. "' (current ID #10000000): "
+                    local message
+                    if listed then
+                        if state == "live door" then
+                            message = "old link cleared; Unlock sent. If still unlinked, !listConsoles; find it; !setEntity <row>"
+                        elseif state == "removed door" then
+                            message = "door no longer available. !listConsoles again; find this console, then !resetLink <row>."
+                        else
+                            message = "has no door link. !listConsoles again; find this console, then !setEntity <row>."
+                        end
+                    else
+                        if state == "live door" then
+                            message = "old link cleared; Unlock sent. If still unlinked, use !setEntity here, then on a door."
+                        elseif state == "removed door" then
+                            message = "previous door is no longer available. Use !resetLink on this console."
+                        else
+                            message = "has no door link. Use !setEntity to select it."
+                        end
+                    end
+                    equal(text, label .. message)
+                    equal(console.SlicerInformation.name, name); equal(#observer.chats, others)
+                end
+            end)
+        end
+    end
+
     test("listed unlink accepts exactly rows one through five with no eye target or tool reads", function()
         local env = gmod.new()
         local owner, other, consoles, doors = env.player(), env.player(), {}, {}
@@ -319,13 +359,16 @@ return function(gmod, test, equal)
             local replacement = env.entity("func_door_rotating")
             local pending = configured(env, owner, "other")
             list(env, owner)
-            local fire = oldDoor.Fire
+            local fire, beforeReply = oldDoor.Fire
+            local observer = env.player()
+            local others = #observer.chats
             function oldDoor:Fire(input)
                 fire(self, input)
                 equal(env.fire("PlayerSay", owner, "!setEntity 1"), "")
                 equal(say(env, owner, replacement, "!setEntity"), "")
                 equal(env.fire("PlayerSay", owner, "!setEntity 2"), "")
                 list(env, owner, "!findConsoles 1 other")
+                beforeReply = #owner.chats
                 if fails then error("private engine failure detail") end
             end
             equal(env.fire("PlayerSay", owner, "!unlinkConsole 1"), "")
@@ -334,6 +377,14 @@ return function(gmod, test, equal)
             equal(env.fire("PlayerUse", owner, oldDoor), nil); equal(env.fire("PlayerUse", owner, replacement), false)
             local text = owner.chats[#owner.chats]
             contains(text, fails and "Unlock failed" or "If still unlinked")
+            equal(#owner.chats, beforeReply + 1, "Replaced page still receives exactly one final private reply")
+            equal(#observer.chats, others)
+            if fails then
+                contains(text, "old link cleared; Unlock failed. Check the previous door before using !setEntity.")
+            else
+                contains(text, "old link cleared; Unlock sent. If still unlinked, !listConsoles; find it; !setEntity <row>")
+                assert(not text:find("!setEntity 1", 1, true), "Replaced row must not be suggested for reuse")
+            end
             assert(not text:find("private engine failure", 1, true))
             console:Remove(); equal(#oldDoor.inputs, 2); equal(#replacement.inputs, 2)
         end)
