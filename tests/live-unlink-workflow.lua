@@ -42,8 +42,9 @@ return function(gmod, test, equal)
         return console
     end
 
+    for _, listed in ipairs({false, true}) do
     for _, classes in ipairs({{"func_door", "func_door_rotating"}, {"func_door_rotating", "func_door"}}) do
-        test("actual configured console corrects live " .. classes[1] .. " to " .. classes[2] .. " and completes", function()
+        test((listed and "listed nearest " or "") .. "actual configured console corrects live " .. classes[1] .. " to " .. classes[2] .. " and completes", function()
             local server, client = gmod.new(), gmod.client()
             local owner, hacker = server.player(), server.player()
             local console = setup(server, client, owner)
@@ -52,15 +53,28 @@ return function(gmod, test, equal)
             local oldDoor, newDoor = server.entity(classes[1]), server.entity(classes[2])
             equal(say(server, owner, oldDoor, "!setEntity"), "")
             equal(console.SlicerDoor, oldDoor); equal(oldDoor.inputs[1], "Lock")
-            equal(say(server, owner, console, "!unlinkConsole"), "")
+            if listed then
+                function owner:GetPos() return {x = 0, y = 0, z = 0} end
+                function console:GetPos() return {x = 1, y = 0, z = 0} end
+                equal(server.fire("PlayerSay", owner, "!nearConsoles 1 linked"), "")
+                equal(server.slicerListedConsole(owner, 1), console)
+                function owner:GetEyeTrace() error("Listed correction must not read an eye target") end
+                function owner:GetActiveWeapon() error("Listed correction must not read a weapon") end
+            end
+            equal(say(server, owner, console, listed and "!unlinkConsole 1" or "!unlinkConsole"), "")
             equal(console.valid, true); equal(console:GetName(), identity)
             equal(console.SlicerInformation, info); equal(registration.information, info)
             equal(server.returnSpawnedEntities()[1], registration)
             equal(console.SlicerDoor, nil); equal(#oldDoor.inputs, 2); equal(oldDoor.inputs[2], "Unlock")
             equal(server.fire("PlayerUse", hacker, oldDoor), nil)
-            equal(say(server, owner, console, "!inspectLink"), "")
-            assert(owner.chats[#owner.chats]:find("has no door link", 1, true))
-            equal(say(server, owner, console, "!setEntity"), "")
+            if not listed then
+                equal(say(server, owner, console, "!inspectLink"), "")
+                assert(owner.chats[#owner.chats]:find("has no door link", 1, true))
+            end
+            equal(say(server, owner, console, listed and "!setEntity 1" or "!setEntity"), "")
+            if listed then
+                function owner:GetEyeTrace() return {Entity = self.target} end
+            end
             equal(say(server, owner, newDoor, "!setEntity"), "")
             equal(console.SlicerDoor, newDoor); equal(newDoor.inputs[1], "Lock")
             equal(server.fire("PlayerUse", hacker, newDoor), false)
@@ -75,7 +89,7 @@ return function(gmod, test, equal)
             -- A refused unlink during this session must leave its original
             -- deadline and association intact, including the legacy false flag.
             server.updateInUse(identity, false)
-            equal(say(server, owner, console, "!unlinkConsole"), "")
+            equal(say(server, owner, console, listed and "!unlinkConsole 1" or "!unlinkConsole"), "")
             equal(console.SlicerDoor, newDoor); equal(#newDoor.inputs, 1)
             equal(server.slicerConsoleHasActiveSession(console), true)
             hacker.target = oldDoor
@@ -89,5 +103,6 @@ return function(gmod, test, equal)
             relay(server, hacker, completion)
             equal(#server.messages, count); equal(#oldDoor.inputs, 2); equal(#newDoor.inputs, 2)
         end)
+    end
     end
 end

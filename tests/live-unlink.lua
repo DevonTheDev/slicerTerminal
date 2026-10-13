@@ -63,11 +63,11 @@ return function(gmod, test, equal)
             end
         end
     end
-    local function unlink(env, owner, console, door)
+    local function unlink(env, owner, console, door, row)
         owner.target = console
         local unchanged = snapshot(env, owner, door and console, door)
         local count = #owner.chats
-        equal(env.fire("PlayerSay", owner, "!unlinkConsole"), "", "Exact unlink command must be consumed")
+        equal(env.fire("PlayerSay", owner, row and ("!unlinkConsole " .. row) or "!unlinkConsole"), "", "Exact unlink command must be consumed")
         equal(#owner.chats, count + 1, "One private unlink reply")
         local reply = owner.chats[#owner.chats]
         assert(#reply <= 255, "Reply exceeds native ChatPrint byte limit")
@@ -76,8 +76,284 @@ return function(gmod, test, equal)
         return reply
     end
 
+    -- Removing the listed branch, loosening its grammar, resolving by labels,
+    -- or omitting its final original-page guard must fail these callback tests.
+    local function list(env, owner, command)
+        equal(env.fire("PlayerSay", owner, command or "!listConsoles"), "")
+    end
+    local function noTarget(owner)
+        function owner:GetEyeTrace() error("Listed unlink must not read an eye target") end
+        function owner:GetActiveWeapon() error("Listed unlink must not read a weapon") end
+    end
+    local function unavailable(text)
+        for _, command in ipairs({"!listConsoles", "!findConsoles", "!nearConsoles", "!unlinkConsole <row>"}) do
+            contains(text, command)
+        end
+    end
+
+    test("listed unlink accepts exactly rows one through five with no eye target or tool reads", function()
+        local env = gmod.new()
+        local owner, other, consoles, doors = env.player(), env.player(), {}, {}
+        for row = 1, 5 do
+            consoles[row] = configured(env, owner)
+            doors[row] = link(env, owner, consoles[row], row % 2 == 0 and "func_door_rotating" or "func_door")
+        end
+        list(env, owner); noTarget(owner)
+        local others = #other.chats
+        for row = 1, 5 do
+            contains(unlink(env, owner, consoles[row], doors[row], row), "Unlock sent")
+            equal(consoles[row].SlicerDoor, nil); equal(#doors[row].inputs, 2)
+            contains(unlink(env, owner, consoles[row], nil, row), "has no door link")
+            equal(#doors[row].inputs, 2, "Repeated unlink must not resend Unlock")
+        end
+        equal(#other.chats, others, "Replies must remain private")
+        for _, command in ipairs({"!unlinkConsole 0", "!unlinkConsole 6", "!unlinkConsole 01", "!unlinkConsole +1",
+            "!unlinkConsole -1", "!unlinkConsole 1.0", "!unlinkConsole 1e0", "!unlinkConsole  1",
+            "!unlinkConsole 1 ", " !unlinkConsole 1", "!unlinkconsole 1", "!UnlinkConsole 1",
+            "!unlinkConsole\t1", "!unlinkConsole 1\n", "!unlinkConsole 1 extra", "!unlinkConsole １"}) do
+            local unchanged = snapshot(env)
+            equal(env.fire("PlayerSay", owner, command), nil, command); unchanged()
+        end
+    end)
+
+    for _, command in ipairs({"!listConsoles 1 linked terminal", "!findConsoles 1 terminal", "!nearConsoles 1 linked terminal"}) do
+        test("listed unlink preserves exact filtered entities despite duplicate labels via " .. command, function()
+            local env = gmod.new()
+            local owner, consoles, doors = env.player(), {}, {}
+            function owner:GetPos() return {x = 0, y = 0, z = 0} end
+            for row = 1, 3 do
+                consoles[row] = configured(env, owner)
+                doors[row] = link(env, owner, consoles[row])
+                consoles[row].id = 42
+                consoles[row].GetPos = function() return {x = 1, y = 0, z = 0} end
+            end
+            list(env, owner, command)
+            for row = 1, 3 do equal(env.slicerListedConsole(owner, row), consoles[row]) end
+            consoles[1]:Remove()
+            local replacement = configured(env, owner); replacement.id = 42
+            noTarget(owner)
+            unavailable(unlink(env, owner, consoles[1], nil, 1))
+            consoles[2].SlicerInformation.name = "renamed"
+            contains(unlink(env, owner, consoles[2], doors[2], 2), "'renamed'")
+            equal(consoles[3].SlicerDoor, doors[3]); equal(#doors[3].inputs, 1)
+            equal(replacement.SlicerDoor, nil); equal(owner.SlicerPendingConsole, replacement)
+        end)
+    end
+
+    test("listed unlink refuses absent stale foreign and reowned rows without target fallback", function()
+        for _, reason in ipairs({"missing page", "missing row", "removed", "reowned", "wrong class", "other player page"}) do
+            local env, owner, console = fixture()
+            local actor = owner
+            if reason ~= "missing page" then list(env, owner) end
+            if reason == "removed" then console:Remove()
+            elseif reason == "reowned" then console.SlicerCreator = env.player()
+            elseif reason == "wrong class" then console.class = "prop_physics"
+            elseif reason == "other player page" then actor = env.player() end
+            noTarget(actor)
+            unavailable(unlink(env, actor, console, nil, reason == "missing row" and 5 or 1))
+        end
+    end)
+
+    test("listed unlink rejects ineligible actors before looking up a page", function()
+        for _, reason in ipairs({"missing", "invalid", "non-player", "dead"}) do
+            local env, owner = fixture()
+            list(env, owner); noTarget(owner)
+            local actor = owner
+            if reason == "missing" then actor = nil
+            elseif reason == "invalid" then actor.valid = false
+            elseif reason == "non-player" then actor.class = "prop_physics"
+            else actor.alive = false end
+            env.slicerListedConsole = function() error("Ineligible actor resolved a row") end
+            local unchanged = snapshot(env)
+            equal(env.fire("PlayerSay", actor, "!unlinkConsole 1"), ""); unchanged()
+        end
+    end)
+
+    test("listed unlink keeps the original deadline at 59.99 and refuses exactly 60 without Think", function()
+        local env, owner, console, door = fixture()
+        local second = configured(env, owner, "second")
+        local secondDoor = link(env, owner, second)
+        list(env, owner); noTarget(owner)
+        local listings = upvalue(env.slicerListedConsole, "consoleListings")
+        local page = listings[owner]
+        equal(page.expires, 60)
+        env.now = 59.99
+        unlink(env, owner, console, door, 1)
+        equal(listings[owner], page); equal(page.expires, 60)
+        env.now = 60
+        unavailable(unlink(env, owner, second, nil, 2))
+        equal(second.SlicerDoor, secondDoor); equal(#secondDoor.inputs, 1)
+        equal(listings[owner], nil)
+    end)
+
+    test("listed unlink respects fresh empty and malformed page replacement", function()
+        local env, owner, first, firstDoor = fixture()
+        local second = configured(env, owner, "second")
+        local secondDoor = link(env, owner, second)
+        list(env, owner); list(env, owner, "!findConsoles 1 second"); noTarget(owner)
+        unlink(env, owner, second, secondDoor, 1)
+        equal(first.SlicerDoor, firstDoor)
+        for _, command in ipairs({"!findConsoles 1 missing", "!listConsoles 0", "!nearConsoles 0"}) do
+            list(env, owner); list(env, owner, command)
+            unavailable(unlink(env, owner, first, nil, 1)); equal(#firstDoor.inputs, 1)
+        end
+    end)
+
+    test("listed unlink retains setup folder raw-busy and door authority refusals", function()
+        for _, reason in ipairs({"unconfigured", "data", "server", "malformed", "busy", "legacy busy",
+            "unsupported", "unregistered", "foreign registry", "removed door", "no door"}) do
+            local env, owner, console, door = fixture()
+            list(env, owner)
+            if reason == "unconfigured" then console.SlicerInformation = nil
+            elseif reason == "data" or reason == "server" then console.SlicerInformation.fileType = reason
+            elseif reason == "malformed" then console.SlicerInformation.delay = "2"
+            elseif reason == "busy" then console.SlicerInformation.inUse = true
+            elseif reason == "legacy busy" then console.SlicerInformation.inUse = 0
+            elseif reason == "unsupported" then console.SlicerDoor = env.entity("prop_door_rotating")
+            elseif reason == "unregistered" then console.SlicerDoor = env.entity("func_door")
+            elseif reason == "foreign registry" then
+                local other = env.player()
+                console.SlicerDoor = link(env, other, configured(env, other, "privateownerlabel"))
+            elseif reason == "removed door" then door:Remove()
+            else console.SlicerDoor = nil end
+            noTarget(owner)
+            local text = unlink(env, owner, console, nil, 1)
+            assert(not text:find("privateownerlabel", 1, true))
+            equal(#door.inputs, 1)
+            if reason == "removed door" then contains(text, "!resetLink")
+            elseif reason == "no door" then contains(text, "!setEntity")
+            elseif reason == "unsupported" or reason == "unregistered" or reason == "foreign registry" then
+                contains(text, "no registered link")
+            else contains(text, "cannot be unlinked") end
+        end
+    end)
+
+    test("listed unlink refuses an actual session despite cleared raw busy without moving its deadline", function()
+        local env, owner, console, door = fixture()
+        local hacker = env.player()
+        env.now = 10; env.open(hacker, console); env.updateInUse(console:GetName(), false)
+        list(env, owner); noTarget(owner)
+        contains(unlink(env, owner, console, nil, 1), "cannot be unlinked")
+        equal(upvalue(env.slicerConsoleHasActiveSession, "sessions")[hacker].completeAt, 12)
+        env.now = 12; env.receive("PlayerActivatedDoor", hacker, console)
+        equal(console.removed, true); equal(#door.inputs, 2); equal(door.inputs[2], "Unlock")
+    end)
+
+    for _, stage in ipairs({"resolver", "label", "door class", "final clock"}) do
+        test("listed unlink rejects a replacement page during " .. stage .. " before mutation", function()
+            local env, owner, console, door = fixture()
+            list(env, owner); noTarget(owner)
+            local listings = upvalue(env.slicerListedConsole, "consoleListings")
+            local originalPage = listings[owner]
+            local function replace() list(env, owner) end
+            if stage == "resolver" then
+                local resolve = env.slicerListedConsole
+                env.slicerListedConsole = function(actor, row)
+                    local found = resolve(actor, row); replace(); return found
+                end
+            elseif stage == "label" then
+                local getter = console.GetCreationID
+                function console:GetCreationID() self.GetCreationID = getter; replace(); return getter(self) end
+            elseif stage == "door class" then
+                local getter = door.GetClass
+                function door:GetClass() self.GetClass = getter; replace(); return getter(self) end
+            else
+                local clock, calls = env.CurTime, 0
+                env.CurTime = function()
+                    calls = calls + 1
+                    if calls == 2 then env.CurTime = clock; replace() end
+                    return clock()
+                end
+            end
+            equal(env.fire("PlayerSay", owner, "!unlinkConsole 1"), "")
+            unavailable(owner.chats[#owner.chats])
+            equal(console.SlicerDoor, door); equal(#door.inputs, 1)
+            assert(listings[owner] ~= originalPage)
+            equal(listings[owner].rows[1], console, "A new lease for the same entity must not authorize the old request")
+        end)
+    end
+
+    for _, stage in ipairs({"resolver", "label", "door class"}) do
+        test("listed unlink rejects original expiry reached during " .. stage .. " before mutation", function()
+            local env, owner, console, door = fixture()
+            list(env, owner); noTarget(owner)
+            local listings = upvalue(env.slicerListedConsole, "consoleListings")
+            local page = listings[owner]
+            if stage == "resolver" then
+                local resolve = env.slicerListedConsole
+                env.slicerListedConsole = function(actor, row)
+                    local found = resolve(actor, row); env.now = 60; return found
+                end
+            elseif stage == "label" then
+                local getter = console.GetCreationID
+                function console:GetCreationID() env.now = 60; return getter(self) end
+            else
+                local getter = door.GetClass
+                function door:GetClass() env.now = 60; return getter(self) end
+            end
+            unavailable(unlink(env, owner, console, nil, 1))
+            equal(console.SlicerDoor, door); equal(#door.inputs, 1)
+            equal(listings[owner], page); equal(page.expires, 60)
+        end)
+    end
+
+    test("listed Unlock reentry sees both deletions and cannot resend before removal", function()
+        local env, owner, console, door = fixture()
+        list(env, owner); noTarget(owner)
+        local fire = door.Fire
+        function door:Fire(input)
+            fire(self, input)
+            equal(console.SlicerDoor, nil)
+            equal(env.fire("PlayerUse", owner, self), nil, "Registration must clear before Unlock")
+            contains(unlink(env, owner, console, nil, 1), "has no door link")
+            console:Remove()
+            function console:GetCreationID() error("Removed console was inspected") end
+        end
+        equal(env.fire("PlayerSay", owner, "!unlinkConsole 1"), "")
+        equal(console.removed, true); equal(#door.inputs, 2)
+    end)
+
+    for _, fails in ipairs({false, true}) do
+        test("listed unlink preserves a newer link after " .. (fails and "failed" or "successful") .. " Unlock", function()
+            local env, owner, console, oldDoor = fixture()
+            local replacement = env.entity("func_door_rotating")
+            local pending = configured(env, owner, "other")
+            list(env, owner)
+            local fire = oldDoor.Fire
+            function oldDoor:Fire(input)
+                fire(self, input)
+                equal(env.fire("PlayerSay", owner, "!setEntity 1"), "")
+                equal(say(env, owner, replacement, "!setEntity"), "")
+                equal(env.fire("PlayerSay", owner, "!setEntity 2"), "")
+                list(env, owner, "!findConsoles 1 other")
+                if fails then error("private engine failure detail") end
+            end
+            equal(env.fire("PlayerSay", owner, "!unlinkConsole 1"), "")
+            equal(console.SlicerDoor, replacement); equal(#oldDoor.inputs, 2); equal(#replacement.inputs, 1)
+            equal(owner.SlicerPendingConsole, pending); equal(env.slicerListedConsole(owner, 1), pending)
+            equal(env.fire("PlayerUse", owner, oldDoor), nil); equal(env.fire("PlayerUse", owner, replacement), false)
+            local text = owner.chats[#owner.chats]
+            contains(text, fails and "Unlock failed" or "If still unlinked")
+            assert(not text:find("private engine failure", 1, true))
+            console:Remove(); equal(#oldDoor.inputs, 2); equal(#replacement.inputs, 2)
+        end)
+    end
+
+    test("listed unlink failure stays cleared and repeated requests do not retry native input", function()
+        local env, owner, console, door = fixture()
+        list(env, owner); noTarget(owner)
+        local calls = 0
+        function door:Fire() calls = calls + 1; error("private engine failure detail") end
+        equal(env.fire("PlayerSay", owner, "!unlinkConsole 1"), "")
+        contains(owner.chats[#owner.chats], "Unlock failed")
+        equal(console.SlicerDoor, nil); equal(calls, 1)
+        contains(unlink(env, owner, console, nil, 1), "has no door link")
+        equal(calls, 1); equal(env.fire("PlayerUse", owner, door), nil)
+    end)
+
+    for _, row in ipairs({false, 1}) do
     for _, class in ipairs({"func_door", "func_door_rotating"}) do
-        test("unlink clears only the current registered " .. class .. " while preserving edits and other sessions", function()
+        test((row and "listed " or "") .. "unlink clears only the current registered " .. class .. " while preserving edits and other sessions", function()
             local env, owner, console, door = fixture(class)
             local other = env.player()
             local otherConsole = configured(env, other, "privateownerlabel")
@@ -89,7 +365,8 @@ return function(gmod, test, equal)
             local info, identity, record = console.SlicerInformation, console:GetName(), env.returnSpawnedEntities()[1]
             info.extra = {retained = true}; console.custom = {retained = true}
             owner.weapon = nil
-            local reply = unlink(env, owner, console, door)
+            if row then list(env, owner); noTarget(owner) end
+            local reply = unlink(env, owner, console, door, row)
             contains(reply, "'terminal'"); contains(reply, "current ID #" .. console:GetCreationID())
             contains(reply, "!setEntity"); contains(reply, "Unlock")
             equal(console.valid, true); equal(console:GetName(), identity)
@@ -98,7 +375,7 @@ return function(gmod, test, equal)
             equal(env.fire("PlayerUse", owner, door), nil)
             equal(env.fire("PlayerUse", owner, otherDoor), false)
             equal(upvalue(env.slicerConsoleHasActiveSession, "sessions")[hacker].completeAt, 12)
-            contains(unlink(env, owner, console), "!setEntity")
+            contains(unlink(env, owner, console, nil, row), "!setEntity")
             env.receive("SlicerSetupEditSave", owner, console, editor.values[3], {name = "renamed", delay = 2, fileName = "secret"})
             equal(env.lastMessage("SlicerSetupEditReply").values[2].ok, true)
             equal(console.SlicerInformation.name, "renamed")
@@ -106,6 +383,8 @@ return function(gmod, test, equal)
             equal(#door.inputs, 2, "Removal after unlink must not send another Unlock")
             equal(#otherDoor.inputs, 1); equal(env.slicerConsoleHasActiveSession(otherConsole), true)
         end)
+    end
+
     end
 
     for _, kind in ipairs({"foreign", "unconfigured", "data", "malformed", "busy", "legacy busy"}) do

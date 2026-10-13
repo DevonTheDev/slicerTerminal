@@ -239,7 +239,7 @@ local slicerHelp = {
         "!pendingLink privately shows your current pending console, without an eye target or tool; linking rechecks eligibility.",
         "!locateConsole pending marks your live owned selection for 15 seconds, even after its catalogue page expires or changes.",
         "!inspectLink: look at your console or its registered door for private link information.",
-        "!unlinkConsole: look at your configured, idle tools console to clear its registered live link and send Unlock to the old door.",
+        "!unlinkConsole or !unlinkConsole <row>: clear your idle tools console's registered live link and send Unlock; bare uses your eye target, row uses your last list/find/near page (1-5, up to 60 seconds).",
         "!resetLink: look at your configured, idle tools console to clear a removed door's old link before selecting a replacement.",
         "!resetLink <row>: recover that console from your last list/find/near page (1-5, up to 60 seconds), then explicitly select it with !setEntity <row>. Live doors cannot be reset.",
     },
@@ -463,14 +463,30 @@ hook.Add("PlayerSay", "slicerResetLink", function(ply, text)
 end)
 
 hook.Add("PlayerSay", "slicerUnlinkConsole", function(ply, text)
-    if text ~= "!unlinkConsole" then return end
+    local digits = type(text) == "string" and #text == 16 and text:match("^!unlinkConsole ([1-5])$")
+    if text ~= "!unlinkConsole" and not digits then return end
     if not IsValid(ply) or not ply:IsPlayer() or not ply:Alive() then return "" end
-    local console = ply:GetEyeTrace().Entity
+    local row = digits and tonumber(digits)
+    local listing = row and consoleListings[ply]
+    local expires = listing and listing.expires
+    local console
+    local function unavailable()
+        ply:ChatPrint("That console row is unavailable or expired. Use !listConsoles, !findConsoles or !nearConsoles again, then !unlinkConsole <row>.")
+        return ""
+    end
+    if row then
+        -- Keep the original private lease and entity across resolver callbacks.
+        console = listing and listing.rows[row]
+        if slicerListedConsole(ply, row) ~= console or not console then return unavailable() end
+    else
+        console = ply:GetEyeTrace().Entity
+    end
     local information = IsValid(console) and console:GetClass() == "consoleent" and console.SlicerCreator == ply
         and normalizeSlicerInformation(console.SlicerInformation)
     if not information or information.fileType ~= "tools" or console.SlicerInformation.inUse
         or slicerConsoleHasActiveSession(console) then
-        ply:ChatPrint("Look at one of your configured, idle tools consoles and type !unlinkConsole.")
+        ply:ChatPrint(row and "That listed console cannot be unlinked. It must be your configured, idle tools console with a registered live door."
+            or "Look at one of your configured, idle tools consoles and type !unlinkConsole.")
         return ""
     end
     local label, door, message = inspectionLabel(console), console.SlicerDoor
@@ -481,6 +497,10 @@ hook.Add("PlayerSay", "slicerUnlinkConsole", function(ply, text)
     elseif not supportedDoors[door:GetClass()] or linkedDoors[door] ~= console then
         message = "no registered link can be confirmed; nothing was changed."
     else
+        -- A replacement page cannot authorize an earlier request, even for
+        -- the same entity. Recheck the original deadline immediately before mutation.
+        if row and (consoleListings[ply] ~= listing or listing.rows[row] ~= console
+            or CurTime() >= expires or consoleListings[ply] ~= listing) then return unavailable() end
         -- Relinquish only this proven association before native input can
         -- remove the console or reenter linking. Never roll back over a new link.
         console.SlicerDoor, linkedDoors[door] = nil, nil

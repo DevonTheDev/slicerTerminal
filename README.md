@@ -171,10 +171,23 @@ markers, or catalogue leases.
 
 Look at your configured, idle tools console and type `!unlinkConsole` to clear
 its current registered live door link and send that previous door one `Unlock`
-input. This preserves the same console, its saved settings, pending selections
-and open edit form. To choose another door, look at that console and type
-`!setEntity`, then look at the intended `func_door` or `func_door_rotating` and
-type `!setEntity` again. The hacking tool is not required for unlinking.
+input. Or use exactly `!unlinkConsole 1` through `!unlinkConsole 5` for a row on
+your latest `!listConsoles`, `!findConsoles` or `!nearConsoles` page, including
+filtered pages. This preserves the same console, its saved settings, pending
+selections and open edit form. The hacking tool is not required for unlinking.
+
+For example, use `!nearConsoles 1 linked`, then `!unlinkConsole <row>` to clear
+that exact console's live link. Explicitly select it with `!setEntity <row>`
+from the same page, then look at the intended `func_door` or
+`func_door_rotating` and type bare `!setEntity` to link the replacement. You can
+also select the console by looking at it and using bare `!setEntity`.
+
+Rows use the exact entity on your private page and its original 60-second
+expiry. Unlink does not refresh that deadline or automatically select a console.
+A new page replaces it; an expired or unavailable row needs a fresh list/find/near
+request. Listed unlink never reads or falls back to your eye target. Use one
+ASCII space and one digit from 1–5; near matches, extra spaces and trailing text
+remain ordinary chat.
 
 Only the living creator can unlink. A busy flag or an actual hacking session
 blocks it. The server must confirm the exact current registration; unsupported,
@@ -1043,6 +1056,13 @@ and removal cleanup. Exact state snapshots check that only the obsolete binding
 and its owned registry entry change. Native eye traces, chat delivery and brush
 door behavior still need the smoke checks below.
 
+Listed-live-unlink tests cover exact row grammar, private exact-entity leases,
+filtered list/find/near pages, duplicate names and IDs, stale/changed ownership,
+page replacement and expiry during callbacks, all unlink refusal checks,
+protected Unlock reentry/failure, and the original 60-second deadline. Listed
+nearest-page workflows explicitly unlink, select the same row, link a replacement
+and complete the existing hack in both supported door-class directions.
+
 Live-unlink tests relay real setup, link A, explicit unlink, selection, link B
 and actual client completion at the original server deadline in both brush-door
 class directions. They check exact preservation of settings, pending selection,
@@ -1092,6 +1112,11 @@ git -c core.whitespace=cr-at-eol diff --check
 These tests do **not** replace a Garry's Mod server/client smoke test. Rendering,
 assets, physics/Use reach, engine networking and multiplayer timing are not
 emulated. Before a live rollout, use a test server to check:
+
+- Use `!nearConsoles 1 linked`, unlink a chosen row with `!unlinkConsole <row>`,
+  select that same row with `!setEntity <row>`, and aim/link a replacement door.
+  Confirm private replies, the intended old door's Unlock, both supported door
+  classes, native protection-addon behavior, and expiry after 60 seconds.
 
 - Select console A, replace its catalogue with B, then run `!locateConsole pending`
   from outside A's PVS. Confirm only the requester sees A's safe label and sampled
