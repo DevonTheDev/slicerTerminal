@@ -58,7 +58,7 @@ inside that terminal instead.
 
 ### Select a listed console for a door
 
-After `!listConsoles`, `!findConsoles` or `!nearConsoles`, type exactly
+After `!listConsoles`, `!findConsoles`, `!findConsoleFiles` or `!nearConsoles`, type exactly
 `!setEntity 1` through `!setEntity 5` to select that row of your most recent page,
 including filtered pages. You can stay near the intended door: check the named confirmation, then
 look at a `func_door` or `func_door_rotating` and type bare `!setEntity` to link it.
@@ -144,7 +144,7 @@ protection-addon compatibility still require the smoke checks below.
 ### Recover after a linked door is removed
 
 Look at your configured tools console and type `!resetLink` in chat. Or, after
-`!listConsoles`, `!findConsoles` or `!nearConsoles`, use exactly `!resetLink 1`
+`!listConsoles`, `!findConsoles`, `!findConsoleFiles` or `!nearConsoles`, use exactly `!resetLink 1`
 through `!resetLink 5` to recover that row without aiming at the console. If its
 previous door is no longer valid, the private reply confirms that the old link
 was cleared. Explicitly select it with `!setEntity <row>` from the same current
@@ -172,7 +172,7 @@ markers, or catalogue leases.
 Look at your configured, idle tools console and type `!unlinkConsole` to clear
 its current registered live door link and send that previous door one `Unlock`
 input. Or use exactly `!unlinkConsole 1` through `!unlinkConsole 5` for a row on
-your latest `!listConsoles`, `!findConsoles` or `!nearConsoles` page, including
+your latest `!listConsoles`, `!findConsoles`, `!findConsoleFiles` or `!nearConsoles` page, including
 filtered pages. This preserves the same console, its saved settings, pending
 selections and open edit form. The hacking tool is not required for unlinking.
 
@@ -229,7 +229,7 @@ targeting and long-name font readability still need an in-game smoke check.
 
 ### Inspect saved console settings
 
-After `!listConsoles`, `!findConsoles` or `!nearConsoles`, type exactly
+After `!listConsoles`, `!findConsoles`, `!findConsoleFiles` or `!nearConsoles`, type exactly
 `!inspectConsole 1` through `!inspectConsole 5` to inspect that row. Use one
 ASCII space and one digit; bare, malformed and near-match commands remain
 ordinary chat. Rows refer to exact entities on your latest page for 60 seconds;
@@ -414,9 +414,46 @@ Search needs a living player but no tool or target; it preserves settings,
 pending links, setup/edit forms, active hacks and deadlines. It sends private
 chat only and leaves any existing location marker alone.
 
+### Find consoles by saved filename or folder
+
+Type `!findConsoleFiles 1 reactor` to find your consoles whose saved filename
+or folder contains `reactor`. Always use `!findConsoleFiles <page> <text>`.
+Folders are `data`, `server` and `tools`; a fragment such as `erv` matches
+`server`. This searches saved configuration metadata, without reading disk
+files. The filename is the saved base name, without an appended extension.
+
+Only valid saved configurations match. Unset or malformed configurations stay
+available through `!listConsoles`. Matching uses a captured copy of the raw saved
+filename and folder, with the same literal ASCII-only folding as name search.
+Display cleanup, Unicode normalization, wildcard patterns and path/escape rules
+do not participate. For example, `!findConsoleFiles 1 ../` matches those exact
+characters in a saved filename. Console names, IDs and state descriptions are
+not searched; `!findConsoles` continues to search only saved console names.
+
+Use exactly one ASCII space before the page and text. The page is 1–7 digits,
+beginning with 1–9. The text is 1–128 bytes, with no edge spaces, ASCII controls,
+UTF-8 C1 controls or Unicode line/paragraph separators; the whole command is at
+most 154 bytes. Internal spaces and punctuation remain literal. Malformed
+recognized requests give fixed private usage feedback; command near matches
+remain ordinary chat. Copy the complete next/first-page hint to repeat a search.
+
+Pages retain the full inventory's ordering, complete console names and link
+descriptions, with at most five rows. Use `!inspectConsole <row>` for the full
+saved metadata. Rows share the existing exact-entity 60-second lease and all its
+creator/eligibility checks. A new list, name search, file search or nearest
+request replaces the rows; malformed, empty and unavailable-page requests clear
+them. Metadata edits do not remap existing rows or renew their deadline.
+
+Search requires a living creator but no tool or eye target. It changes no saved
+configuration, door, pending selection, setup/edit form or ticket, active hack,
+deadline or location marker. Replies are private; a newer catalogue request or
+loss of ownership/liveness during a file-search reply suppresses obsolete output.
+An interrupted file reply retires its own unfinished page without clearing a
+newer catalogue request.
+
 ### Locate a listed, found or pending console
 
-After `!listConsoles`, `!findConsoles` or `!nearConsoles`, type `!locateConsole 2`
+After `!listConsoles`, `!findConsoles`, `!findConsoleFiles` or `!nearConsoles`, type `!locateConsole 2`
 to mark row 2 of your most recently shown catalogue page. Rows 1–5 refer to the
 exact consoles from that page for 60 seconds; they are not creation IDs. A fresh
 catalogue request replaces those rows, and a malformed, empty or unavailable-page
@@ -479,7 +516,7 @@ validation and do not receive a correlated acknowledgement.
 
 ### Open initial setup from a listed row
 
-After `!listConsoles`, `!findConsoles` or `!nearConsoles`, type exactly
+After `!listConsoles`, `!findConsoles`, `!findConsoleFiles` or `!nearConsoles`, type exactly
 `!setupConsole 1` through `!setupConsole 5` to open the existing initial form
 for that exact row. Use one ASCII space and one digit. Bare commands, extra
 spaces or arguments, different case and other row spellings remain ordinary
@@ -592,7 +629,7 @@ Derma focus/clicks and mixed-version multiplayer delivery still need a game chec
 
 Look at one of your configured, idle consoles and type `!editConsole` in chat.
 You can also use `!editConsole 1` through `!editConsole 5` to edit that exact row
-from your latest `!listConsoles`, `!findConsoles` or `!nearConsoles` page, including
+from your latest `!listConsoles`, `!findConsoles`, `!findConsoleFiles` or `!nearConsoles` page, including
 filtered pages.
 The row command requires one space and one digit, with no trailing whitespace;
 other edit-like text stays ordinary chat. The row is private to you and lasts
@@ -1042,6 +1079,13 @@ pending setup/edit acknowledgements, deferred copies, pending links and an
 unrelated hack's original deadline. Native maximum command entry length,
 multibyte rendering and multiplayer privacy still require an in-game check.
 
+Filename/folder-search tests cover captured raw metadata, invalid/unset
+configuration exclusion, literal matching and byte limits, private bounded
+pages, exact row leases, and nested metadata/accessor/feedback replacement.
+A real-callback workflow relays accepted setup/edit replies and duplication
+while retaining pending selection, open forms and an unrelated hack's original
+deadline. Native chat entry length, delivery and rendering remain unverified.
+
 Rotating-door tests relay real client setup and tools commands into the server,
 then check linking, reservations, minimum delay, completion and cleanup against
 both supported classes. They also cover mixed links, refused prop/arbitrary
@@ -1234,6 +1278,13 @@ emulated. Before a live rollout, use a test server to check:
   entry accepts, private filtered pages and repeatable page hints. Locate a
   search row, rename/remove its console, then switch back to the full list;
   verify current ownership, exact rows, expiry and the existing marker lifecycle
+- Use `!findConsoleFiles 1 <text>` with saved filenames and each folder,
+  including mixed ASCII case, punctuation, internal spaces and 128-byte text.
+  Verify private results, complete page hints and `!inspectConsole <row>`
+  metadata. Check native chat's 154-byte command boundary, invalid/unset
+  configuration exclusion, and locate the original row after editing its
+  filename. Switch catalogue families while forms and another player's hack
+  remain active; verify the shared row lease and unchanged marker lifecycle
 - With two players, duplicate each configured terminal type, including while the
   original is occupied. Check independent configuration and new creator ownership;
   removing or undoing the copy must leave the original session and door intact

@@ -216,13 +216,13 @@ local slicerHelp = {
         "Browse your own consoles while alive; these commands need no hacking tool or eye target.",
         "!listConsoles [<page> [<state>]]: list; !nearConsoles [<page> [<state>]]: nearest first.",
         "!findConsoles <page> <text>: search saved names literally (ASCII case-insensitive).",
+        "!findConsoleFiles <page> <text>: search saved filename/folder in valid saved configurations (literal, ASCII case-insensitive).",
         "!listConsoles <page> <state> <text> or !nearConsoles <page> <state> <text>: combine state and name; setup does not accept text.",
         "States: setup, unlinked, unconfirmed, linked, reserved. Pages: 1-7 digits, no leading zero.",
         "Text: 1-128 bytes, no edge spaces or controls. Use one ASCII space between arguments.",
         "!locateConsole <row> marks a row; !locateConsole pending marks your selected console; !locateConsole clear hides your marker.",
         "!inspectConsole <row> privately shows the saved name, folder, base delay and filename, including while busy.",
-        "Rows 1-5 mean exact entities on your last list/find/near page for up to 60 seconds; row actions do not renew that deadline.",
-        "A new list/find/near request replaces the page; malformed or empty requests clear its rows. Current ownership and eligibility still apply.",
+        "Rows 1-5 are exact entities for 60 seconds; actions do not renew them. New list/find/near requests replace them; malformed/empty requests clear them. Ownership and eligibility still apply.",
     },
     ["!slicerHelp setup"] = {
         "Setup/edit require the living console creator. Use your unconfigured console to open setup without a hacking tool.",
@@ -661,7 +661,24 @@ local function consolePositionSnapshot(entity)
     end
 end
 
-local function showConsolePage(ply, page, query, state, origin)
+local function showConsolePage(ply, page, query, state, origin, mode)
+    local files = mode == "files"
+    -- An in-progress file page has no usable rows. Reuse the catalogue's
+    -- identity so any newer catalogue request retires this private reply.
+    local listing = files and {rows = {}, expires = 0}
+    if listing then consoleListings[ply] = listing end
+    local function current(console)
+        if not files then return true end
+        if consoleListings[ply] ~= listing then return false end
+        if not IsValid(ply) or not ply:IsPlayer() or not ply:Alive()
+            or (console and (not IsValid(console) or console:GetClass() ~= "consoleent" or console.SlicerCreator ~= ply)) then
+            -- A partial reply must not leave unseen rows usable. Never retire
+            -- a newer catalogue installed by an accessor or feedback callback.
+            if consoleListings[ply] == listing then consoleListings[ply] = nil end
+            return false
+        end
+        return consoleListings[ply] == listing
+    end
     -- Enumerate every live owned console, including deferred setup and copies
     -- missing from the configuration registry. Sort only our separate array.
     local consoles = {}
@@ -669,9 +686,22 @@ local function showConsolePage(ply, page, query, state, origin)
     local foldedQuery = query and foldConsoleName(query)
     for _, console in ipairs(ents.FindByClass("consoleent")) do
         if IsValid(console) and console:GetClass() == "consoleent" and console.SlicerCreator == ply then
-            local name = query and type(console.SlicerInformation) == "table" and console.SlicerInformation.name or nil
-            if (not state or matchesConsoleState(console, state)) and (not query or (type(name) == "string"
-                and #name <= 128 and string.Trim(name) ~= "" and foldConsoleName(name):find(foldedQuery, 1, true))) then
+            local matches
+            if files then
+                local saved = console.SlicerInformation
+                -- Validation may trim/case-fold its returned copy. Match the
+                -- captured raw fields, not that copy or display-only cleanup.
+                local captured = type(saved) == "table" and {name = saved.name, delay = saved.delay,
+                    fileName = saved.fileName, fileType = saved.fileType}
+                matches = normalizeSlicerInformation(captured) and (foldConsoleName(captured.fileName):find(foldedQuery, 1, true)
+                    or foldConsoleName(captured.fileType):find(foldedQuery, 1, true))
+                if not current(console) then return end
+            else
+                local name = query and type(console.SlicerInformation) == "table" and console.SlicerInformation.name or nil
+                matches = (not state or matchesConsoleState(console, state)) and (not query or (type(name) == "string"
+                    and #name <= 128 and string.Trim(name) ~= "" and foldConsoleName(name):find(foldedQuery, 1, true)))
+            end
+            if matches then
                 consoles[#consoles + 1] = console
                 if distances then
                     local position = consolePositionSnapshot(console)
@@ -697,43 +727,55 @@ local function showConsolePage(ply, page, query, state, origin)
         if firstID == secondID then return first:EntIndex() < second:EntIndex() end
         return firstID < secondID
     end)
+    if not current() then return end
 
     local total = #consoles
     local pages = math.ceil(total / consolesPerPage)
     local messages = {}
     if total == 0 then
-        messages[1] = origin and query and ("No matching console names (" .. state .. ") for '" .. query .. "'. Use !nearConsoles 1 " .. state .. " for all in that state.")
+        messages[1] = files and "No matching saved filename/folder in valid configurations. Use !listConsoles for all your consoles, including invalid or unset configurations."
+            or origin and query and ("No matching console names (" .. state .. ") for '" .. query .. "'. Use !nearConsoles 1 " .. state .. " for all in that state.")
             or query and state and ("No matching console names in state '" .. state .. "'. Use !listConsoles 1 " .. state .. " for all consoles in that state.")
             or query and "No matching console names. Use !listConsoles for all your consoles, including those needing setup."
             or state and ("You have no consoles matching state '" .. state .. "'.")
             or "You have no consoles."
     elseif page > pages then
-        messages[1] = origin and query and ("Search page must be between 1 and " .. pages .. ". Use !nearConsoles <page> " .. state .. " " .. query)
+        messages[1] = files and ("Search page must be between 1 and " .. pages .. ". Use !findConsoleFiles <page> <text>.")
+            or origin and query and ("Search page must be between 1 and " .. pages .. ". Use !nearConsoles <page> " .. state .. " " .. query)
             or origin and ("Console page must be between 1 and " .. pages .. ". Use !nearConsoles <page>" .. (state and " " .. state or "") .. ".")
             or query and state and ("Search page must be between 1 and " .. pages .. ". Use !listConsoles <page> " .. state .. " <text>.")
             or query and ("Search page must be between 1 and " .. pages .. ". Use !findConsoles <page> <text>.")
             or ("Console page must be between 1 and " .. pages .. ". Use !listConsoles <page>" .. (state and " " .. state or "") .. ".")
     else
-        messages[1] = (origin and ((query and "Your matching consoles" or "Your consoles") .. " (nearest-first request snapshot" .. (state and "; " .. state or "") .. "): page ")
+        messages[1] = (files and "Your matching consoles (saved filename/folder; valid configurations): page "
+            or origin and ((query and "Your matching consoles" or "Your consoles") .. " (nearest-first request snapshot" .. (state and "; " .. state or "") .. "): page ")
             or query and state and ("Your matching consoles (" .. state .. "): page ")
             or query and "Your matching consoles: page " or state and ("Your consoles (" .. state .. "): page ")
             or "Your consoles: page ") .. page .. " of " .. pages
             .. " (" .. total .. (query and " matches" or " total") .. "). Locate: !locateConsole <row>."
+        if files then messages[1] = messages[1] .. " Inspect: !inspectConsole <row>." end
         local first = (page - 1) * consolesPerPage + 1
         local rows = {}
         for i = first, math.min(first + consolesPerPage - 1, total) do
             local console = consoles[i]
+            if not current(console) then return end
             rows[#rows + 1] = console
             messages[#messages + 1] = #rows .. ". " .. inspectConsoleLink(console, normalizeSlicerInformation(console.SlicerInformation))
+            if not current(console) then return end
         end
-        consoleListings[ply] = {rows = rows, expires = CurTime() + listingLifetime}
+        local expires = CurTime() + listingLifetime
+        if not current() then return end
+        if files then listing.rows, listing.expires = rows, expires
+        else consoleListings[ply] = {rows = rows, expires = expires} end
         if page < pages then
-            messages[#messages + 1] = origin and ("Next page: !nearConsoles " .. (page + 1) .. (state and " " .. state or "") .. (query and " " .. query or "."))
+            messages[#messages + 1] = files and ("Next page: !findConsoleFiles " .. (page + 1) .. " " .. query)
+                or origin and ("Next page: !nearConsoles " .. (page + 1) .. (state and " " .. state or "") .. (query and " " .. query or "."))
                 or query and state and ("Next page: !listConsoles " .. (page + 1) .. " " .. state .. " " .. query)
                 or query and ("Next page: !findConsoles " .. (page + 1) .. " " .. query)
                 or ("Next page: !listConsoles " .. (page + 1) .. (state and " " .. state or "") .. ".")
         elseif page > 1 then
-            messages[#messages + 1] = origin and ("First page: !nearConsoles" .. (state and " 1 " .. state or "") .. (query and " " .. query or "."))
+            messages[#messages + 1] = files and ("First page: !findConsoleFiles 1 " .. query)
+                or origin and ("First page: !nearConsoles" .. (state and " 1 " .. state or "") .. (query and " " .. query or "."))
                 or query and state and ("First page: !listConsoles 1 " .. state .. " " .. query)
                 or query and ("First page: !findConsoles 1 " .. query)
                 or state and ("First page: !listConsoles 1 " .. state .. ".") or "First page: !listConsoles."
@@ -741,7 +783,13 @@ local function showConsolePage(ply, page, query, state, origin)
     end
     -- Prepare the complete reply before ChatPrint callbacks can remove or
     -- change an entity. Every row retains inspection's existing byte budget.
-    for _, message in ipairs(messages) do ply:ChatPrint(message) end
+    for _, message in ipairs(messages) do
+        if not current() then return end
+        if files then
+            for _, console in ipairs(listing.rows) do if not current(console) then return end end
+        end
+        ply:ChatPrint(message)
+    end
 end
 
 hook.Add("PlayerSay", "slicerListConsoles", function(ply, text)
@@ -792,6 +840,21 @@ hook.Add("PlayerSay", "slicerFindConsoles", function(ply, text)
         return ""
     end
     showConsolePage(ply, tonumber(page), query)
+    return ""
+end)
+
+hook.Add("PlayerSay", "slicerFindConsoleFiles", function(ply, text)
+    if type(text) ~= "string" or (text ~= "!findConsoleFiles" and not text:find("^!findConsoleFiles%s")) then return end
+    if ply ~= nil then consoleListings[ply] = nil end
+    if not IsValid(ply) or not ply:IsPlayer() or not ply:Alive() then return "" end
+
+    local page, query
+    if #text <= 154 then page, query = text:match("^!findConsoleFiles ([1-9][0-9]*) (.+)$") end
+    if not page or #page > 7 or not validConsoleQuery(query) then
+        ply:ChatPrint("Usage: !findConsoleFiles <page> <text> (1-7 page digits, no leading zero; 1-128 text bytes, no edge spaces or controls).")
+        return ""
+    end
+    showConsolePage(ply, tonumber(page), query, nil, nil, "files")
     return ""
 end)
 
