@@ -631,7 +631,7 @@ net.Receive("PlayerSpawnedConsole", function()
         laterButton:SetText(pending and "Close" or "Set up later")
         for _, input in ipairs({consoleNameFrame, slicerTime, fileName}) do input:SetEditable(not pending) end
     end
-    showStatus("Enter the console settings, then choose Done.", false)
+    showStatus("Delay: positive finite seconds (e.g. 0.5). Then choose Done.", false)
     lockInputs(false)
 
     function finishButton.DoClick()
@@ -892,7 +892,7 @@ net.Receive("SlicerSetupEditOpen", function()
     local delay = entry("Slice delay (seconds)", delayText, 110)
     local fileName = entry("Filename (no extension)", information.fileName, 180)
     label("Folder: " .. information.fileType .. " (fixed)", 250, 24)
-    local status = label("Change the fields above, then save.", 286, 60)
+    local status = label("Delay: positive finite seconds (e.g. 0.5). Then save.", 286, 60)
     local save = vgui.Create("DButton", frame)
     save:SetText("Save changes")
     save:SetPos(20, 366)
