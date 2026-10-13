@@ -236,6 +236,7 @@ local slicerHelp = {
         "!setEntity: look at your configured, idle, unlinked tools console to select it, then at a door to link.",
         "!setEntity <row> selects an eligible console from your last list/find/near page (1-5, up to 60 seconds).",
         "Supported doors: func_door and func_door_rotating. !cancelLink clears only your pending selection.",
+        "!pendingLink privately shows your current pending console, without an eye target or tool; linking rechecks eligibility.",
         "!inspectLink: look at your console or its registered door for private link information.",
         "!unlinkConsole: look at your configured, idle tools console to clear its registered live link and send Unlock to the old door.",
         "!resetLink: look at your configured, idle tools console to clear a removed door's old link before selecting a replacement.",
@@ -354,6 +355,51 @@ local function inspectionText(text)
     return (text:gsub("[%z\1-\31\127]", "?"):gsub("\194[\128-\159]", "?")
         :gsub("\226\128[\168\169]", "?"))
 end
+
+hook.Add("PlayerSay", "slicerPendingLink", function(ply, text)
+    if text ~= "!pendingLink" then return end
+    -- A failed native read or private reply must not publish recognized chat.
+    pcall(function()
+        if not IsValid(ply) or not ply:IsPlayer() or not ply:Alive() then return end
+        local console = ply.SlicerPendingConsole
+        local live = console ~= nil and IsValid(console)
+        local creator, class
+        if live then
+            -- Capture ordinary fields before accessors can reenter. Neither
+            -- a saved name nor a creation ID resolves or authorizes a choice.
+            creator = console.SlicerCreator
+            class = console:GetClass()
+        end
+        local message = "You have no pending door-link selection."
+        if console ~= nil then
+            message = "Your pending door-link selection is unavailable. Use !cancelLink, or !setEntity on an eligible console to select again."
+            if live and class == "consoleent" and creator == ply then
+                local information = console.SlicerInformation
+                local name = type(information) == "table" and information.name
+                local label = "Your pending console"
+                if type(name) == "string" and #name <= 128 and string.Trim(name) ~= "" then
+                    label = label .. " '" .. inspectionText(name) .. "'"
+                end
+                local getID = console.GetCreationID
+                local id = type(getID) == "function" and getID(console)
+                if type(id) == "number" and id >= 0 and id <= 10000000 and id == math.floor(id) then
+                    label = label .. " (current ID #" .. string.format("%.0f", id) .. ")"
+                end
+                message = label .. "; linking rechecks eligibility."
+            end
+        end
+        -- Resolve feedback before rechecking the captured entity and caller.
+        -- Suppress obsolete replies; never restore, clear or renew a choice.
+        -- These are synchronous native-accessor checks, not a reply registry.
+        local feedback = ply.ChatPrint
+        if (console ~= nil and IsValid(console)) ~= live then return end
+        if live and (console:GetClass() ~= class or console.SlicerCreator ~= creator or not IsValid(console)) then return end
+        if not IsValid(ply) or not ply:IsPlayer() or not ply:Alive() then return end
+        if ply.SlicerPendingConsole ~= console then return end
+        feedback(ply, message)
+    end)
+    return ""
+end)
 
 local function inspectionLabel(console, information)
     information = information or console.SlicerInformation

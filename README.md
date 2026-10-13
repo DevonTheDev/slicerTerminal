@@ -79,6 +79,30 @@ Final linking keeps its existing checks and retry behavior; `!cancelLink` clears
 the choice. Selection leaves saved settings, setup/edit forms, locator markers,
 existing links and other hacking sessions unchanged.
 
+### Check a pending door selection
+
+Type exactly `!pendingLink` in chat to privately check your current pending
+door-link choice. You must be a living player; no eye target or hacking tool
+is needed. A live console that you still own is described by its current safe,
+bounded saved name and numeric creation ID when those display fields are
+available. Names and IDs are informational labels, not authority for linking.
+Duplicate names or IDs never substitute a different entity for your choice.
+
+The one-line reply reports no pending choice, the current owned console, or an
+unavailable choice with `!cancelLink` / `!setEntity` guidance. A console remains
+inspectable after configuration, busy state or saved door changes; the reply
+does not promise it can link. Final linking rechecks its existing eligibility
+rules. Unsafe or missing display fields are omitted, without a name/ID search.
+Other casing, whitespace or arguments remain ordinary chat.
+
+Inspection changes no selection, configuration, link, setup/edit form, locator,
+listing lease or hacking session. An accepted choice has no timeout and survives
+catalogue expiry/replacement and death; it can be inspected after respawning.
+Existing successful linking, cancellation, disconnect and removed-console
+cleanup keep their clearing behavior. A newer choice made during feedback is
+preserved. Obsolete replies are suppressed after the checked synchronous
+accessors replace, cancel, remove or change ownership of the captured choice.
+
 ### Cancel a pending door selection
 
 Type exactly `!cancelLink` in chat to clear your own pending door-link selection.
@@ -859,6 +883,17 @@ forms, weapon hold-type initialization, disabled primary/secondary attacks,
 the callable death-drop hook, single completion feedback with 1, 2,
 and 12 connected players, and compilation of all five addon Lua
 files.
+
+Pending-selection tests exercise the real chat callbacks for exact grammar,
+living callers, private failures, automatic/bare/listed choices, changed names,
+same-label entities, stale/foreign/wrong-class references, byte-bounded Unicode
+and control cleanup, malformed IDs, and explicitly controlled synchronous
+accessor/feedback reentry. Workflows retain pending setup/edit replies, drafts,
+locator leases, another player's choice and an active hack, and link both brush
+door classes after catalogue expiry/replacement and death/respawn. These doubles
+model ordinary native accessors and the declared reentry controls; they do not
+establish safety against arbitrary hostile metamethods or native multiplayer
+chat/door behavior.
 
 Command-assistance tests run the actual client callbacks for every folder/target
 combination, bounded per-terminal history, help dismissal/retirement and the
