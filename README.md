@@ -64,7 +64,8 @@ including filtered pages. You can stay near the intended door: check the named c
 look at a `func_door` or `func_door_rotating` and type bare `!setEntity` to link it.
 The row command needs a living creator and a currently configured, idle tools
 console with no door pointer or active hacking reservation. A removed former
-door still needs explicit `!resetLink` first. No hacking tool or eye target is
+door still needs explicit `!resetLink <row>` (or aimed `!resetLink`) first.
+Reset does not select the recovered console. No hacking tool or eye target is
 required to select a row. Near matches, extra spaces and trailing text remain
 ordinary chat; the existing look-at-console command still works.
 
@@ -142,19 +143,29 @@ protection-addon compatibility still require the smoke checks below.
 
 ### Recover after a linked door is removed
 
-Look at your configured tools console and type `!resetLink` in chat. If its
+Look at your configured tools console and type `!resetLink` in chat. Or, after
+`!listConsoles`, `!findConsoles` or `!nearConsoles`, use exactly `!resetLink 1`
+through `!resetLink 5` to recover that row without aiming at the console. If its
 previous door is no longer valid, the private reply confirms that the old link
-was cleared. Then look at that console and type `!setEntity` to select it;
-look at a replacement `func_door` or `func_door_rotating` and type `!setEntity`
-again to link and lock that door through the normal workflow.
+was cleared. Explicitly select it with `!setEntity <row>` from the same current
+page, or look at the console and type bare `!setEntity`. Then look at a replacement
+`func_door` or `func_door_rotating` and type `!setEntity` to link and lock that door.
+
+Row recovery uses the exact console on your most recent page and its original
+60-second deadline. A new page replaces it; an expired or unavailable row needs
+a fresh list/find/near request. Reset never refreshes that deadline or falls back
+to your eye target. Use one ASCII space and one digit from 1–5; near matches,
+extra spaces and trailing text remain ordinary chat. No hacking tool is required.
 
 Only the living creator can reset an idle console. A busy flag or an actual
-hacking session blocks recovery, and a live door link cannot be reset. A fresh
+hacking session blocks recovery, and every live door pointer blocks reset,
+including an unsupported or unregistered entity shown as `unconfirmed`. A fresh
 unlinked console just receives selection guidance. Reset keeps the saved
 configuration, open setup/edit forms and pending selections intact, so you
 must explicitly select the recovered console before choosing its new door.
 It clears only the unavailable door association and its matching registration;
-it does not unlock doors or change other consoles' links or sessions.
+it does not unlock doors or change other consoles' links or sessions, locator
+markers, or catalogue leases.
 
 ### Correct a live door assignment
 

@@ -95,6 +95,197 @@ return function(gmod, test, equal)
         return text
     end
 
+    test("listed reset recognizes exactly rows one through five without eye trace or weapon access", function()
+        local env = gmod.new()
+        local owner, consoles, doors = env.player(), {}, {}
+        for row = 1, 5 do
+            consoles[row] = configured(env, owner)
+            doors[row] = link(env, owner, consoles[row])
+            doors[row]:Remove()
+        end
+        equal(env.fire("PlayerSay", owner, "!listConsoles"), "")
+        function owner:GetEyeTrace() error("Listed reset must not read an eye target") end
+        function owner:GetActiveWeapon() error("Listed reset must not read a weapon") end
+        for row = 1, 5 do
+            local unchanged, chats = snapshot(env, owner, consoles[row], doors[row]), #owner.chats
+            equal(env.fire("PlayerSay", owner, "!resetLink " .. row), "", "Exact listed reset command must be consumed")
+            equal(consoles[row].SlicerDoor, nil)
+            equal(#owner.chats, chats + 1); unchanged()
+            contains(owner.chats[#owner.chats], "old link cleared")
+            assert(#owner.chats[#owner.chats] <= 255)
+        end
+        for _, text in ipairs({"!resetLink 0", "!resetLink 6", "!resetLink 01", "!resetLink +1",
+            "!resetLink 1.0", "!resetLink  1", "!resetLink 1 ", " !resetLink 1", "!resetlink 1",
+            "!resetLink\t1", "!resetLink 1\n", "!resetLink 1 extra", "!resetLink １"}) do
+            local unchanged = snapshot(env)
+            equal(env.fire("PlayerSay", owner, text), nil, text); unchanged()
+        end
+    end)
+
+    local function listedReset(env, owner, row, console, door)
+        local unchanged, chats = snapshot(env, owner, door and console, door), #owner.chats
+        equal(env.fire("PlayerSay", owner, "!resetLink " .. row), "")
+        equal(#owner.chats, chats + 1, "Listed reset sends one private reply")
+        local text = owner.chats[#owner.chats]
+        assert(#text <= 255); assert(not text:find("[%z\1-\31\127]")); unchanged()
+        return text
+    end
+    local function unavailable(text)
+        for _, command in ipairs({"!listConsoles", "!findConsoles", "!nearConsoles", "!resetLink <row>"}) do
+            contains(text, command)
+        end
+    end
+
+    for _, command in ipairs({"!listConsoles", "!findConsoles 1 terminal", "!nearConsoles"}) do
+        test("listed reset keeps exact entities after duplicate IDs and an earlier removal via " .. command, function()
+            local env = gmod.new()
+            local owner, consoles, doors = env.player(), {}, {}
+            function owner:GetPos() return {x = 0, y = 0, z = 0} end
+            for row = 1, 3 do
+                consoles[row] = configured(env, owner)
+                doors[row] = link(env, owner, consoles[row]); doors[row]:Remove()
+                consoles[row].id = 42
+                consoles[row].GetPos = function() return {x = 1, y = 0, z = 0} end
+            end
+            equal(env.fire("PlayerSay", owner, command), "")
+            for row = 1, 3 do
+                equal(env.slicerListedConsole(owner, row), consoles[row], "Catalogue must establish the exact fixture rows")
+            end
+            consoles[1]:Remove()
+            local replacement = configured(env, owner)
+            replacement.id = 42
+            function owner:GetEyeTrace() error("Listed recovery cannot fall back to eye target") end
+            unavailable(listedReset(env, owner, 1))
+            consoles[2].SlicerInformation.name = "renamed"
+            contains(listedReset(env, owner, 2, consoles[2], doors[2]), "'renamed'")
+            equal(consoles[2].SlicerDoor, nil); equal(consoles[3].SlicerDoor, doors[3])
+            equal(owner.SlicerPendingConsole, replacement)
+        end)
+    end
+
+    test("listed reset refuses missing removed reowned rows and dead callers privately", function()
+        for _, reason in ipairs({"missing page", "missing row", "removed", "reowned", "dead"}) do
+            local env, owner, console = fixture()
+            if reason ~= "missing page" then equal(env.fire("PlayerSay", owner, "!listConsoles"), "") end
+            if reason == "removed" then console:Remove()
+            elseif reason == "reowned" then console.SlicerCreator = env.player()
+            elseif reason == "dead" then owner.alive = false end
+            function owner:GetEyeTrace() error("Unavailable row used eye trace") end
+            if reason == "dead" then
+                local unchanged = snapshot(env)
+                equal(env.fire("PlayerSay", owner, "!resetLink 1"), ""); unchanged()
+            else
+                unavailable(listedReset(env, owner, reason == "missing row" and 5 or 1))
+            end
+        end
+    end)
+
+    test("listed reset preserves the original lease at 59.99 and refuses at 60 without Think", function()
+        local env, owner, console, door = fixture()
+        equal(env.fire("PlayerSay", owner, "!listConsoles"), "")
+        local listings = upvalue(env.slicerListedConsole, "consoleListings")
+        local page = listings[owner]
+        equal(page.expires, 60)
+        env.now = 59.99
+        listedReset(env, owner, 1, console, door)
+        equal(listings[owner], page); equal(page.expires, 60)
+        local stale = env.entity("func_door"); stale:Remove(); console.SlicerDoor = stale
+        env.now = 60
+        unavailable(listedReset(env, owner, 1))
+        equal(console.SlicerDoor, stale); equal(listings[owner], nil)
+    end)
+
+    test("listed reset follows fresh empty and malformed catalogue replacement semantics", function()
+        local env, owner, first, firstDoor = fixture()
+        local second = configured(env, owner, "tools", "second")
+        local secondDoor = link(env, owner, second); secondDoor:Remove()
+        equal(env.fire("PlayerSay", owner, "!listConsoles"), "")
+        equal(env.fire("PlayerSay", owner, "!findConsoles 1 second"), "")
+        listedReset(env, owner, 1, second, secondDoor)
+        equal(first.SlicerDoor, firstDoor)
+        for _, command in ipairs({"!findConsoles 1 missing", "!listConsoles 0", "!nearConsoles 0"}) do
+            equal(env.fire("PlayerSay", owner, "!listConsoles"), "")
+            equal(env.fire("PlayerSay", owner, command), "")
+            unavailable(listedReset(env, owner, 1)); equal(first.SlicerDoor, firstDoor)
+        end
+    end)
+
+    test("listed reset shares live-pointer raw-busy and actual-session refusal checks", function()
+        for _, reason in ipairs({"live unregistered", "raw busy", "actual session", "nil pointer"}) do
+            local env, owner, console, door = fixture()
+            if reason == "live unregistered" then console.SlicerDoor = env.entity("prop_physics")
+            elseif reason == "raw busy" then console.SlicerInformation.inUse = "busy"
+            elseif reason == "actual session" then
+                door.valid = true
+                env.now = 10; env.open(env.player(), console)
+                door:Remove(); env.updateInUse(console:GetName(), false)
+                equal(env.slicerConsoleHasActiveSession(console), true)
+            else console.SlicerDoor = nil end
+            equal(env.fire("PlayerSay", owner, reason == "live unregistered" and "!listConsoles 1 unconfirmed" or "!listConsoles"), "")
+            local listings = upvalue(env.slicerListedConsole, "consoleListings")
+            local page, expiry = listings[owner], listings[owner].expires
+            local text = listedReset(env, owner, 1)
+            equal(listings[owner], page); equal(page.expires, expiry)
+            if reason == "live unregistered" then contains(text, "still has an available door")
+            elseif reason == "nil pointer" then contains(text, "!setEntity")
+            else contains(text, "cannot be reset") end
+        end
+    end)
+
+    for _, change in ipairs({"replace page", "expire page"}) do
+        test("listed reset rejects a resolver callback that will " .. change, function()
+            local env, owner, console, door = fixture()
+            equal(env.fire("PlayerSay", owner, "!listConsoles"), "")
+            local listings = upvalue(env.slicerListedConsole, "consoleListings")
+            local originalPage, resolver, currentPage = listings[owner], env.slicerListedConsole
+            env.slicerListedConsole = function(actor, row)
+                local found = resolver(actor, row)
+                if change == "replace page" then equal(env.fire("PlayerSay", owner, "!listConsoles"), "")
+                else env.now = 60 end
+                currentPage = listings[owner]
+                return found
+            end
+            equal(env.fire("PlayerSay", owner, "!resetLink 1"), "")
+            equal(console.SlicerDoor, door); equal(#door.inputs, 1)
+            unavailable(owner.chats[#owner.chats])
+            equal(listings[owner], currentPage, "Reset must not restore the old page")
+            if change == "replace page" then assert(currentPage ~= originalPage) end
+        end)
+    end
+
+    for _, change in ipairs({"select and relink", "print new page"}) do
+        test("listed reset preserves a success feedback callback that will " .. change, function()
+            local env, owner, console, door = fixture()
+            local other = configured(env, owner, "tools", "other")
+            equal(env.fire("PlayerSay", owner, "!listConsoles"), "")
+            local listings = upvalue(env.slicerListedConsole, "consoleListings")
+            local originalPage, currentPage = listings[owner]
+            local chat, replacement = owner.ChatPrint, env.entity("func_door_rotating")
+            function owner:ChatPrint(text)
+                self.ChatPrint = chat
+                equal(console.SlicerDoor, nil, "Mutation must precede feedback")
+                equal(env.fire("PlayerUse", owner, door), nil, "Registry clear must precede feedback")
+                chat(self, text)
+                if change == "select and relink" then
+                    equal(env.fire("PlayerSay", owner, "!setEntity 1"), "")
+                    equal(say(env, owner, replacement, "!setEntity"), "")
+                    equal(env.fire("PlayerSay", owner, "!setEntity 2"), "")
+                else equal(env.fire("PlayerSay", owner, "!findConsoles 1 other"), "") end
+                currentPage = listings[owner]
+            end
+            equal(env.fire("PlayerSay", owner, "!resetLink 1"), "")
+            equal(listings[owner], currentPage); equal(owner.SlicerPendingConsole, other)
+            equal(#door.inputs, 1)
+            if change == "select and relink" then
+                equal(console.SlicerDoor, replacement); equal(#replacement.inputs, 1)
+                equal(env.fire("PlayerUse", owner, replacement), false)
+            else
+                equal(console.SlicerDoor, nil); assert(currentPage ~= originalPage)
+                equal(env.slicerListedConsole(owner, 1), other)
+            end
+        end)
+    end
+
     for _, class in ipairs({"func_door", "func_door_rotating"}) do
         test("reset recovers only the removed " .. class .. " binding without selecting a replacement", function()
             local env, owner, console, door = fixture(class)

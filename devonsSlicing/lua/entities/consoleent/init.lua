@@ -241,6 +241,7 @@ local slicerHelp = {
         "!inspectLink: look at your console or its registered door for private link information.",
         "!unlinkConsole: look at your configured, idle tools console to clear its registered live link and send Unlock to the old door.",
         "!resetLink: look at your configured, idle tools console to clear a removed door's old link before selecting a replacement.",
+        "!resetLink <row>: recover that console from your last list/find/near page (1-5, up to 60 seconds), then explicitly select it with !setEntity <row>. Live doors cannot be reset.",
     },
     ["!slicerHelp hacking"] = {
         "To hack, a living player equips Devons Hacking Tool and uses Use on a configured, available console. Tools consoles need a linked door.",
@@ -416,16 +417,31 @@ local function inspectionLabel(console, information)
 end
 
 hook.Add("PlayerSay", "slicerResetLink", function(ply, text)
-    if text ~= "!resetLink" then return end
+    local digits = type(text) == "string" and #text == 12 and text:match("^!resetLink ([1-5])$")
+    if text ~= "!resetLink" and not digits then return end
     if not IsValid(ply) or not ply:IsPlayer() or not ply:Alive() then return "" end
-    local console = ply:GetEyeTrace().Entity
+    local row = digits and tonumber(digits)
+    local listing = row and consoleListings[ply]
+    local console
+    local function unavailable()
+        ply:ChatPrint("That console row is unavailable or expired. Use !listConsoles, !findConsoles or !nearConsoles again, then !resetLink <row>.")
+        return ""
+    end
+    if row then
+        -- Capture the original page and exact entity before resolver callbacks.
+        console = listing and listing.rows[row]
+        if slicerListedConsole(ply, row) ~= console or not console then return unavailable() end
+    else
+        console = ply:GetEyeTrace().Entity
+    end
     local information = IsValid(console) and console:GetClass() == "consoleent" and console.SlicerCreator == ply
         and normalizeSlicerInformation(console.SlicerInformation)
     -- Validate a separate copy without replacing saved fields, records or edit
     -- tickets. The raw busy flag and actual reservation independently veto reset.
     if not information or information.fileType ~= "tools" or console.SlicerInformation.inUse
         or slicerConsoleHasActiveSession(console) then
-        ply:ChatPrint("Look at one of your configured, idle tools consoles with a removed door and type !resetLink.")
+        ply:ChatPrint(row and "That listed console cannot be reset. It must be your configured, idle tools console with a removed door."
+            or "Look at one of your configured, idle tools consoles with a removed door and type !resetLink.")
         return ""
     end
     local door, message = console.SlicerDoor
@@ -434,6 +450,10 @@ hook.Add("PlayerSay", "slicerResetLink", function(ply, text)
     elseif IsValid(door) then
         message = "still has an available door; its link was not changed."
     else
+        -- A newer page cannot authorize this earlier request, even when its
+        -- row points at the same console. Neither reset outcome renews a page.
+        if row and (consoleListings[ply] ~= listing or listing.rows[row] ~= console
+            or CurTime() >= listing.expires or consoleListings[ply] ~= listing) then return unavailable() end
         console.SlicerDoor = nil
         if linkedDoors[door] == console then linkedDoors[door] = nil end
         message = "old link cleared. Use !setEntity on this console, then on a replacement door."

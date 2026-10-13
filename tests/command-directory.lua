@@ -4,7 +4,7 @@ return function(gmod, test, equal)
         {command = "!slicerHelp", fragments = {"!slicerHelp browse", "!slicerHelp setup", "!slicerHelp links", "!slicerHelp hacking"}},
         {command = "!slicerHelp browse", fragments = {"!listConsoles", "!findConsoles", "!nearConsoles", "!locateConsole", "60 seconds", "setup", "unconfirmed", "reserved"}},
         {command = "!slicerHelp setup", fragments = {"!setupConsole", "!editConsole", "creator", "Use"}},
-        {command = "!slicerHelp links", fragments = {"!setEntity", "!cancelLink", "!inspectLink", "!resetLink", "!unlinkConsole", "creator", "func_door_rotating"}},
+        {command = "!slicerHelp links", fragments = {"!setEntity", "!cancelLink", "!inspectLink", "!resetLink <row>", "!unlinkConsole", "creator", "func_door_rotating", "last list/find/near page", "explicitly select", "Live doors cannot be reset"}},
         {command = "!slicerHelp hacking", fragments = {"Hacking Tool", "Use", "/help", "!hackStatus", "!quitConsole", "living"}},
     }
     local function reply(env, player, command)
