@@ -646,13 +646,20 @@ net.Receive("PlayerSpawnedConsole", function()
         local enteredSliceDelay = tonumber(slicerTime:GetValue())
         local enteredFileType = fileType:GetSelected()
         local enteredFileName = fileName:GetValue()
-        if #enteredConsoleName > 128 or string.Trim(enteredConsoleName) == ""
-            or #enteredFileName > 128 or string.Trim(enteredFileName) == ""
-            or enteredSliceDelay == nil or enteredSliceDelay != enteredSliceDelay
-            or enteredSliceDelay <= 0 or enteredSliceDelay == math.huge
-            or (enteredFileType != "data" and enteredFileType != "server" and enteredFileType != "tools") then
-            callingPlayer:ChatPrint("One or more fields is invalid")
-            showStatus("Invalid fields: choose a folder, nonblank names of at most 128 bytes, and a finite positive delay.", true)
+        local invalidField
+        if #enteredConsoleName > 128 or string.Trim(enteredConsoleName) == "" then
+            invalidField = "Invalid console name: enter a nonblank name of at most 128 bytes."
+        elseif enteredSliceDelay == nil or enteredSliceDelay != enteredSliceDelay
+            or enteredSliceDelay <= 0 or enteredSliceDelay == math.huge then
+            invalidField = "Invalid slice delay: enter a finite number of seconds greater than 0."
+        elseif enteredFileType != "data" and enteredFileType != "server" and enteredFileType != "tools" then
+            invalidField = "Invalid folder: choose data, server, or tools."
+        elseif #enteredFileName > 128 or string.Trim(enteredFileName) == "" then
+            invalidField = "Invalid filename: enter a nonblank filename of at most 128 bytes."
+        end
+        if invalidField then
+            callingPlayer:ChatPrint(invalidField)
+            showStatus(invalidField, true)
             return
         end
         local token = nextInitialSetupToken()
@@ -922,11 +929,17 @@ net.Receive("SlicerSetupEditOpen", function()
         end
         local enteredName, enteredFile = name:GetValue(), fileName:GetValue()
         local enteredDelay = tonumber(delay:GetValue())
-        if #enteredName > 128 or string.Trim(enteredName) == ""
-            or #enteredFile > 128 or string.Trim(enteredFile) == ""
-            or enteredDelay == nil or enteredDelay ~= enteredDelay
+        local invalidField
+        if #enteredName > 128 or string.Trim(enteredName) == "" then
+            invalidField = "Invalid console name: enter a nonblank name of at most 128 bytes."
+        elseif enteredDelay == nil or enteredDelay ~= enteredDelay
             or enteredDelay <= 0 or enteredDelay == math.huge then
-            showStatus("Invalid fields: names must be nonblank and at most 128 bytes; delay must be a finite number greater than 0.", true)
+            invalidField = "Invalid slice delay: enter a finite number of seconds greater than 0."
+        elseif #enteredFile > 128 or string.Trim(enteredFile) == "" then
+            invalidField = "Invalid filename: enter a nonblank filename of at most 128 bytes."
+        end
+        if invalidField then
+            showStatus(invalidField, true)
             return
         end
         setPending(true)

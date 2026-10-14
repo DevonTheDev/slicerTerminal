@@ -17,6 +17,10 @@ and terminal-driven downloads or door unlocking.
    the original submission without sending setup again. A rejection keeps the
    draft available with a status message; an acceptance closes that form.
    Each new form starts without previous values.
+   Local validation identifies the first invalid field in display order: console
+   name, delay, folder, then filename. The saved-settings editor checks console
+   name, delay, then filename. Each message explains that field's existing rule;
+   the draft stays editable until all fields are valid.
 3. Accepted `tools` setup selects that terminal for its creator. Look at the
    intended console and type `!setEntity`; check the named selection confirmation.
    Then look at a `func_door` or `func_door_rotating` and type `!setEntity` again

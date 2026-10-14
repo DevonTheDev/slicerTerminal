@@ -341,6 +341,12 @@ test("overlapping setup forms keep their own values and console IDs", function()
     acceptClientSetup(env, second)
 end)
 
+local setupFieldFeedback = {
+    name = "Invalid console name: enter a nonblank name of at most 128 bytes.",
+    delay = "Invalid slice delay: enter a finite number of seconds greater than 0.",
+    folder = "Invalid folder: choose data, server, or tools.",
+    file = "Invalid filename: enter a nonblank filename of at most 128 bytes.",
+}
 for _, invalid in ipairs({
     {label = "blank name", field = "name", value = ""},
     {label = "whitespace name", field = "name", value = " \t "},
@@ -366,8 +372,40 @@ for _, invalid in ipairs({
         equal(#env.messages, 0, "Invalid configuration was sent")
         equal(form.frame.valid, true)
         equal(#form.player.chats, 1)
+        equal(form.player.chats[1], setupFieldFeedback[invalid.field])
+        equal(form.status.text, setupFieldFeedback[invalid.field])
+        equal(form.name:GetValue(), values.name); equal(form.delay:GetValue(), values.delay)
+        equal(form.folder:GetSelected(), values.folder); equal(form.file:GetValue(), values.file)
+        equal(form.done.enabled, true); equal(form.folder.enabled, true)
+        for _, entry in ipairs({form.name, form.delay, form.file}) do equal(entry.editable, true) end
     end)
 end
+
+test("setup reports the first invalid field in visible order while retaining the draft", function()
+    local env = gmod.client()
+    local form = openSetup(env)
+    local values = {name = " \t ", delay = "0", folder = "invalid", file = ""}
+    local corrections = {name = "  Terminal  ", delay = "0.5", folder = "data", file = "  Secret  "}
+    form.file:RequestFocus()
+    for index, field in ipairs({"name", "delay", "folder", "file"}) do
+        form:fill(values.name, values.delay, values.folder, values.file, false)
+        form.done:DoClick()
+        equal(form.status.text, setupFieldFeedback[field])
+        equal(#form.player.chats, index); equal(form.player.chats[index], setupFieldFeedback[field])
+        equal(#env.messages, 0); equal(form.frame.valid, true)
+        equal(form.name:GetValue(), values.name); equal(form.delay:GetValue(), values.delay)
+        equal(form.folder:GetSelected(), values.folder); equal(form.file:GetValue(), values.file)
+        equal(env.focusedPanel, form.file, "Feedback must not move focus")
+        values[field] = corrections[field]
+    end
+    form:fill(values.name, values.delay, values.folder, values.file, false)
+    form.done:DoClick()
+    local submitted = assert(env.lastMessage("AdminFinishedCreation")).values[1]
+    equal(submitted[1], corrections.name); equal(submitted[2], 0.5)
+    equal(submitted[3], corrections.folder); equal(submitted[4], corrections.file)
+    equal(#env.messages, 1); equal(#form.player.chats, 4)
+    acceptClientSetup(env, form)
+end)
 
 test("an invalid setup can be corrected and submitted", function()
     local env = gmod.client()

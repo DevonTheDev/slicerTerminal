@@ -47,6 +47,7 @@ return function(gmod, test, equal)
         assert(form.frame and form.save and form.cancel, "Expected edit frame, Save changes and Cancel")
         equal(#entries, 3, "Only name, delay and filename are editable")
         form.name, form.delay, form.file = entries[1], entries[2], entries[3]
+        form.status = form.labels[#form.labels]
         function form:fill(name, delay, file)
             self.name:SetText(name or "New terminal")
             self.delay:SetText(delay or "4.5")
@@ -124,15 +125,20 @@ return function(gmod, test, equal)
         equal(packetCount(client), 1, "Saved callbacks remain retired")
     end)
 
+    local fieldFeedback = {
+        name = "Invalid console name: enter a nonblank name of at most 128 bytes.",
+        delay = "Invalid slice delay: enter a finite number of seconds greater than 0.",
+        file = "Invalid filename: enter a nonblank filename of at most 128 bytes.",
+    }
     for _, invalid in ipairs({
-        {"empty name", "", "2", "file"}, {"blank name", " \t ", "2", "file"},
-        {"long name", string.rep("a", 129), "2", "file"},
-        {"empty file", "name", "2", ""}, {"blank file", "name", "2", " \t "},
-        {"long file", "name", "2", string.rep("f", 129)},
-        {"zero", "name", "0", "file"}, {"negative", "name", "-1", "file"},
-        {"text delay", "name", "later", "file"}, {"infinite delay", "name", "1e999", "file"},
-        {"negative infinity", "name", "-1e999", "file"}, {"NaN delay", "name", "nan", "file"},
-        {"blank delay", "name", "", "file"},
+        {"empty name", "", "2", "file", "name"}, {"blank name", " \t ", "2", "file", "name"},
+        {"long name", string.rep("a", 129), "2", "file", "name"},
+        {"empty file", "name", "2", "", "file"}, {"blank file", "name", "2", " \t ", "file"},
+        {"long file", "name", "2", string.rep("f", 129), "file"},
+        {"zero", "name", "0", "file", "delay"}, {"negative", "name", "-1", "file", "delay"},
+        {"text delay", "name", "later", "file", "delay"}, {"infinite delay", "name", "1e999", "file", "delay"},
+        {"negative infinity", "name", "-1e999", "file", "delay"}, {"NaN delay", "name", "nan", "file", "delay"},
+        {"blank delay", "name", "", "file", "delay"},
     }) do
         test("edit validation retains invalid " .. invalid[1] .. " for correction", function()
             local client, _, _, form = fixture()
@@ -140,11 +146,37 @@ return function(gmod, test, equal)
             form.save:DoClick()
             equal(packetCount(client), 0); equal(form.frame.valid, true)
             equal(form.name:GetValue(), invalid[2]); equal(form.delay:GetValue(), invalid[3]); equal(form.file:GetValue(), invalid[4])
-            assert(form:text():lower():find("invalid", 1, true) or form:text():find("128", 1, true), "Explain invalid fields")
+            equal(form.status.text, fieldFeedback[invalid[5]])
+            equal(form.save.enabled ~= false, true)
+            for _, input in ipairs({form.name, form.delay, form.file}) do equal(input.editable, true) end
             form:fill(); form.save:DoClick()
             equal(packetCount(client, "SlicerSetupEditSave"), 1, "Correction must remain available")
         end)
     end
+
+    test("edit reports the first invalid field in visible order while retaining the draft", function()
+        local client, owner, _, form = fixture()
+        local values = {name = " \t ", delay = "0", file = ""}
+        local corrections = {name = "  Terminal  ", delay = "0.5", file = "  Secret  "}
+        form.file:RequestFocus()
+        for _, field in ipairs({"name", "delay", "file"}) do
+            form:fill(values.name, values.delay, values.file)
+            form.save:DoClick()
+            equal(form.status.text, fieldFeedback[field])
+            equal(packetCount(client), 0); equal(form.frame.valid, true)
+            equal(form.name:GetValue(), values.name); equal(form.delay:GetValue(), values.delay)
+            equal(form.file:GetValue(), values.file)
+            equal(client.focusedPanel, form.file, "Feedback must not move focus")
+            values[field] = corrections[field]
+        end
+        form:fill(values.name, values.delay, values.file); form.save:DoClick()
+        local submitted = assert(client.lastMessage("SlicerSetupEditSave")).values[3]
+        equal(submitted.name, corrections.name); equal(submitted.delay, 0.5)
+        equal(submitted.fileName, corrections.file); equal(packetCount(client), 1)
+        equal(#owner.chats, 0, "Edit validation uses its existing status control")
+        reply(client, "edit:one", true)
+        equal(form.frame.valid, false)
+    end)
 
     for _, sample in ipairs({
         {"fractional", 0.12345678901234566},
