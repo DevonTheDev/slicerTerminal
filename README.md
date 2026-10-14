@@ -900,6 +900,15 @@ and filename. A folder only offers a download or tool command when it contains
 the target file; every folder includes its return command. Help can be closed
 without quitting, and it does not submit an action or bypass a countdown.
 
+On the folder-selection screen, click the data, server or tools artwork to
+open that folder immediately. A hand cursor, hover tint and tooltip mark each
+clickable picture. Clicking replaces the current command draft and submits the
+same folder command as typing it, including normal history and sound. The
+listed names still come from configured metadata and local decoys; these are
+not real file contents. File rows remain read-only, and download/tool actions
+still use their existing commands. Back creates fresh folder click controls;
+retained callbacks from an earlier visit cannot reopen a folder.
+
 Inside data, server and tools folders, **Back to folders** returns to the same
 folder-selection screen and clears its command entry. It closes Commands and
 keeps your current terminal reservation, so you can recover from a wrong folder
@@ -1032,6 +1041,14 @@ deferred-deletion controls cannot navigate. The existing initial-layout and
 resize tests include the new footer control and sibling spacing at 640×480 and
 larger sizes. These API-double checks do not certify native button input,
 Derma focus, font fit or rendering; use the in-game smoke checks below.
+
+Folder-click tests cover all nine target/folder combinations, exact existing
+listings, shared typed navigation/history/sound, Commands insertion without
+submission, fresh controls after Back, stale/deferred/reentrant callbacks,
+invalid ownership and countdown guards. They record artwork-aligned rectangles
+at initial and resized sizes plus cursor/tooltip/hover callback state. Native
+mouse hit targets, layering, hover appearance and focus still require the
+in-game smoke check below.
 
 Command-directory tests exercise real chat hooks for all four static topics,
 alive/dead access without creator or admin checks, exact syntax, fixed malformed
@@ -1346,6 +1363,12 @@ emulated. Before a live rollout, use a test server to check:
 - Strip or switch away from the hacking tool during each completion flow;
   confirm no success is printed, the terminal remains available and another
   player can use it. Re-equip and retry normally
+- At 640×480 and after resizing to a larger viewport, hover and click each
+  folder picture. Confirm the hand cursor, tooltip and highlight are clear,
+  the artwork receives the click, and its existing three file-name rows open.
+  Return with Back and repeat; each picture must still work. Compare typed
+  folder commands and Commands insertion followed by Enter. Clicks should add
+  the exact folder command to history once and play the existing enter sound.
 - At 640×480 and after resizing, enter each folder and click Back to folders
   with Commands open and closed. Confirm the footer labels fit, controls do not
   overlap, and the same folder-selection screen returns with an empty command

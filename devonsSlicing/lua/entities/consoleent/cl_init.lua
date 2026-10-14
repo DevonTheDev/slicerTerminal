@@ -268,6 +268,58 @@ local function layoutFolder(image, parent, layout, column, identity, page)
     end)
 end
 
+-- Each folder visit owns three disposable hit targets over the existing art.
+-- Retire the whole set before removal so queued/reentrant clicks stay inert.
+local function configureFolderButtons(input, parent, info, page, layout)
+    local folders = {{name = "data", column = 2}, {name = "server", column = 3}, {name = "tools", column = 1}}
+    page.folderButtons = {}
+    page.ClearFolderButtons = function()
+        local previous = page.folderButtons
+        page.folderButtons = {}
+        for _, button in pairs(previous) do
+            if isPlayerLayoutPanel(button) then button:Remove() end
+        end
+    end
+    local function layoutButtons()
+        for _, folder in ipairs(folders) do
+            setPlayerRect(page.folderButtons[folder.name],
+                layout.folderX + (folder.column - 1) * (layout.folderSize + layout.gap),
+                layout.folderY, layout.folderSize, layout.folderSize)
+        end
+    end
+    trackPlayerGeometry(page, layoutButtons)
+    page.RefreshFolderButtons = function()
+        page.ClearFolderButtons()
+        for _, folder in ipairs(folders) do
+            local name = folder.name
+            local button = vgui.Create("DButton", parent)
+            page.folderButtons[name] = button
+            button:SetText("")
+            button:SetCursor("hand")
+            button:SetTooltip("Open " .. name .. " folder")
+            local function canOpen()
+                return page.folderButtons[name] == button and isLiveCommandPanel(button)
+                    and button:IsEnabled() and input.IsCurrentTerminalPage() and input:IsKeyboardInputEnabled()
+                    and not timer.Exists("AccessDelay") and not timer.Exists("DownloadDataFile")
+                    and not timer.Exists("DownloadServerFile")
+            end
+            button.Paint = function(self, w, h)
+                if canOpen() and self:IsHovered() then
+                    draw.RoundedBox(4, 0, 0, w, h, Color(36, 209, 36, 45))
+                end
+            end
+            button.DoClick = function()
+                if not canOpen() then return end
+                input.HistoryPos = 0
+                input:SetText("/a[" .. info.name .. "]/{_" .. name .. "}")
+                input:OnEnter()
+            end
+        end
+        layoutButtons()
+    end
+    page.RefreshFolderButtons()
+end
+
 local function layoutFileRow(row, layout, index, page)
     trackPlayerGeometry(page, function()
         setPlayerRect(row, layout.rowX, layout.rowY + (index - 1) * (layout.rowHeight + layout.gap),
@@ -404,6 +456,7 @@ local function configureCommandAssistance(input, parent, info, stage, history, s
             folders.input:SetTextColor(Color(36, 209, 36, 255))
             timer.Start("secondPageGlitch")
             folders.frame:Show()
+            folders.RefreshFolderButtons()
         end
         back = vgui.Create("DButton", parent)
         page.returnButton = back
@@ -1273,6 +1326,7 @@ This code sets up the second page of the console
                inputTerminal2:SetPaintBackground(false)
                inputTerminal2:SetCursorColor(Color(36, 209, 36, 255))
                configureCommandAssistance(inputTerminal2, secondPage, consoleInfo, "folders", commandHistory, terminalSession)
+               configureFolderButtons(inputTerminal2, secondPage, consoleInfo, folderPage, layout)
 
                inputTerminal2.OnGetFocus = function(self) -- Clears the text when the player clicks on the box
                    self:SetPlaceholderText("")
@@ -1314,6 +1368,7 @@ for _, filename in ipairs(filenames) do
 end
 
                    if(string.lower(inputTerminal2:GetValue()) == "/a[" .. consoleInfo["name"] .. "]/" .. acceptedFolders[1]) then
+                       folderPage.ClearFolderButtons()
 
                        timer.Stop("secondPageGlitch") -- Removes the glitch effect so errors aren't thrown
                        timer.Stop("secondPageReturn") -- Removes the glitch effect so errors aren't thrown
@@ -1468,6 +1523,7 @@ end
                    end
 
                    if(string.lower(inputTerminal2:GetValue()) == "/a[" .. consoleInfo["name"] .. "]/" .. acceptedFolders[2]) then
+                       folderPage.ClearFolderButtons()
 
                        timer.Stop("secondPageGlitch") -- Removes the glitch effect so errors aren't thrown
                        timer.Stop("secondPageReturn") -- Removes the glitch effect so errors aren't thrown
@@ -1622,6 +1678,7 @@ end
                    end
 
                    if(string.lower(inputTerminal2:GetValue()) == "/a[" .. consoleInfo["name"] .. "]/" .. acceptedFolders[3]) then
+                       folderPage.ClearFolderButtons()
 
                        timer.Stop("secondPageGlitch") -- Removes the glitch effect so errors aren't thrown
                        timer.Stop("secondPageReturn") -- Removes the glitch effect so errors aren't thrown

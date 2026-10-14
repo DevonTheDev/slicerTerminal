@@ -315,6 +315,9 @@ function M.client()
         function panel:IsKeyboardInputEnabled() return self.keyboardInputEnabled == true end
         function panel:IsMarkedForDeletion() return self.markedForDeletion == true end
         function panel:SetEnabled(value) self.enabled = value end
+        function panel:SetCursor(value) self.cursor = value end
+        function panel:SetTooltip(value) self.tooltip = value end
+        function panel:IsHovered() return self.hovered == true end
         function panel:IsEnabled() return self.enabled ~= false end
         function panel:SetTall(value) self.height = value end
         function panel:SetCaretPos(value)
