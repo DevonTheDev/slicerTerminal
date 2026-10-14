@@ -913,8 +913,9 @@ still use their existing commands. Back creates fresh folder click controls;
 retained callbacks from an earlier visit cannot reopen a folder.
 
 Inside data, server and tools folders, **Back to folders** returns to the same
-folder-selection screen and clears its command entry. It closes Commands and
-keeps your current terminal reservation, so you can recover from a wrong folder
+folder-selection screen and clears its command entry. It requests keyboard
+focus on that entry when it is still current and editable. It closes Commands
+and keeps your current terminal reservation, so you can recover from a wrong folder
 without logging in again. The existing typed return command does the same.
 Back is unavailable during either file download; Commands and Quit remain
 available. Running the tools file still completes and closes the terminal.

@@ -176,6 +176,68 @@ return function(gmod, test, equal)
         end)
     end
 
+    for _, kind in ipairs(kinds) do
+        for _, method in ipairs({"button", "typed"}) do
+            for _, withHelp in ipairs({false, true}) do
+                test(kind.folder .. " " .. method .. " return requests command focus with help " .. tostring(withHelp), function()
+                    local client, _, _, _, _, _, folders = fixture(kind)
+                    local entry, back = openFolder(client, kind)
+                    local help = withHelp and helper.help(client, entry)
+                    local session = helper.upvalue(entry.IsCurrentTerminalPage, "session")
+                    local history, historyCalls = folders.History, #client.historyCalls
+                    local focusCalls, messages, sounds = #client.focusCalls, #client.messages, #client.sounds
+                    local requestFocus = folders.RequestFocus
+                    function folders:RequestFocus()
+                        equal(helper.live(self), true, "Reveal the retained entry before requesting focus")
+                        equal(entry:IsMarkedForDeletion(), true, "Retire the previous page before requesting focus")
+                        for _, name in ipairs({"data", "server", "tools"}) do
+                            local button = assert(session.pages.folders.folderButtons[name], "Missing refreshed folder control")
+                            equal(helper.live(button), true,
+                                "Refresh folder controls before requesting focus")
+                        end
+                        requestFocus(self)
+                    end
+                    if method == "typed" then
+                        entry:SetText(returnCommand(kind))
+                        entry:OnEnter()
+                    else back:DoClick() end
+                    equal(#client.focusCalls, focusCalls + 1, "Successful return requests focus exactly once")
+                    equal(client.focusCalls[#client.focusCalls], folders, "Focus belongs to the retained command entry")
+                    equal(helper.entry(client), folders); equal(folders:GetValue(), "")
+                    equal(folders.History, history, "Focus must preserve shared command history")
+                    equal(#client.historyCalls, historyCalls + (method == "typed" and 1 or 0))
+                    equal(#client.sounds, sounds + (method == "typed" and 1 or 0))
+                    equal(#client.messages, messages, "Focus must not submit or send a packet")
+                    if help then equal(help.valid, false) end
+                end)
+            end
+        end
+    end
+
+    for _, state in ipairs({"hidden frame", "hidden input", "marked input", "disabled input",
+        "keyboard disabled", "replaced folder record", "replaced session"}) do
+        test("return skips its final focus request for " .. state, function()
+            local client, server, _, _, _, _, folders = fixture(kinds[1])
+            local entry, back = openFolder(client, kinds[1])
+            local session = helper.upvalue(entry.IsCurrentTerminalPage, "session")
+            local folderPage = session.pages.folders
+            local refresh = folderPage.RefreshFolderButtons
+            folderPage.RefreshFolderButtons = function()
+                refresh()
+                if state == "hidden frame" then folders.parent:Hide()
+                elseif state == "hidden input" then folders:Hide()
+                elseif state == "marked input" then folders.markedForDeletion = true
+                elseif state == "disabled input" then folders:SetEnabled(false)
+                elseif state == "keyboard disabled" then folders:SetKeyboardInputEnabled(false)
+                elseif state == "replaced folder record" then session.pages.folders = {frame = folders.parent, input = folders}
+                else helper.deliver(client, assert(server.lastMessage("ServerSendsEntityInformation"))) end
+            end
+            local focusCalls = #client.focusCalls
+            back:DoClick()
+            equal(#client.focusCalls, focusCalls, "Recheck the destination immediately before requesting focus")
+        end)
+    end
+
     test("return requires the exact registered file page and a live folder destination", function()
         for _, invalid in ipairs({"file record", "folder frame", "folder input"}) do
             local client, _, _, _, _, _, folders = fixture(kinds[1])

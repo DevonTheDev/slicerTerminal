@@ -462,6 +462,10 @@ local function configureCommandAssistance(input, parent, info, stage, history, s
             timer.Start("secondPageGlitch")
             folders.frame:Show()
             folders.RefreshFolderButtons()
+            if folders.input.IsCurrentTerminalPage() and folders.input:IsEnabled()
+                and folders.input:IsKeyboardInputEnabled() then
+                folders.input:RequestFocus()
+            end
         end
         back = vgui.Create("DButton", parent)
         page.returnButton = back
