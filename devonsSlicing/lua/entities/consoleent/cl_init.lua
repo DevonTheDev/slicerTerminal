@@ -511,6 +511,13 @@ local function registerCreatorGeometry(form, geometry)
     form.reflow(width, height)
 end
 
+-- Feedback may retire or replace a form before correction focus is requested.
+local function focusInvalidCreatorField(form, input)
+    if not form.isCurrent() or form.pending or not isLiveCommandPanel(input)
+        or not input:IsEnabled() or not input:IsKeyboardInputEnabled() then return end
+    input:RequestFocus()
+end
+
 local function nextInitialSetupToken()
     if type(slicerInitialSetupSerial) ~= "number" or slicerInitialSetupSerial < 0
         or slicerInitialSetupSerial % 1 ~= 0 or slicerInitialSetupSerial >= 9007199254740991 then return end
@@ -646,20 +653,24 @@ net.Receive("PlayerSpawnedConsole", function()
         local enteredSliceDelay = tonumber(slicerTime:GetValue())
         local enteredFileType = fileType:GetSelected()
         local enteredFileName = fileName:GetValue()
-        local invalidField
+        local invalidField, invalidInput
         if #enteredConsoleName > 128 or string.Trim(enteredConsoleName) == "" then
             invalidField = "Invalid console name: enter a nonblank name of at most 128 bytes."
+            invalidInput = consoleNameFrame
         elseif enteredSliceDelay == nil or enteredSliceDelay != enteredSliceDelay
             or enteredSliceDelay <= 0 or enteredSliceDelay == math.huge then
             invalidField = "Invalid slice delay: enter a finite number of seconds greater than 0."
+            invalidInput = slicerTime
         elseif enteredFileType != "data" and enteredFileType != "server" and enteredFileType != "tools" then
             invalidField = "Invalid folder: choose data, server, or tools."
         elseif #enteredFileName > 128 or string.Trim(enteredFileName) == "" then
             invalidField = "Invalid filename: enter a nonblank filename of at most 128 bytes."
+            invalidInput = fileName
         end
         if invalidField then
             callingPlayer:ChatPrint(invalidField)
             showStatus(invalidField, true)
+            focusInvalidCreatorField(setup, invalidInput)
             return
         end
         local token = nextInitialSetupToken()
@@ -929,17 +940,21 @@ net.Receive("SlicerSetupEditOpen", function()
         end
         local enteredName, enteredFile = name:GetValue(), fileName:GetValue()
         local enteredDelay = tonumber(delay:GetValue())
-        local invalidField
+        local invalidField, invalidInput
         if #enteredName > 128 or string.Trim(enteredName) == "" then
             invalidField = "Invalid console name: enter a nonblank name of at most 128 bytes."
+            invalidInput = name
         elseif enteredDelay == nil or enteredDelay ~= enteredDelay
             or enteredDelay <= 0 or enteredDelay == math.huge then
             invalidField = "Invalid slice delay: enter a finite number of seconds greater than 0."
+            invalidInput = delay
         elseif #enteredFile > 128 or string.Trim(enteredFile) == "" then
             invalidField = "Invalid filename: enter a nonblank filename of at most 128 bytes."
+            invalidInput = fileName
         end
         if invalidField then
             showStatus(invalidField, true)
+            focusInvalidCreatorField(edit, invalidInput)
             return
         end
         setPending(true)

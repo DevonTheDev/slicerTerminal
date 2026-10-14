@@ -116,6 +116,7 @@ return function(gmod, test, equal)
         assert(form:text():find("Closing cannot undo a submitted save", 1, true), "Pending dismissal must explain that Save may already be applied")
         equal(form.cancel.text, "Close", "A pending dismissal must not promise to cancel the submitted write")
         equal(packetCount(client), 1)
+        equal(#client.focusCalls, 1, "Valid save adds no focus request")
         reply(client, "another-token", true)
         equal(form.frame.valid, true, "Unrelated acknowledgement cannot close this form")
         reply(client, "edit:one", true)
@@ -147,10 +148,13 @@ return function(gmod, test, equal)
             equal(packetCount(client), 0); equal(form.frame.valid, true)
             equal(form.name:GetValue(), invalid[2]); equal(form.delay:GetValue(), invalid[3]); equal(form.file:GetValue(), invalid[4])
             equal(form.status.text, fieldFeedback[invalid[5]])
+            equal(client.focusedPanel, form[invalid[5]]); equal(#client.focusCalls, 1)
+            equal(#client.caretCalls, 0, "Validation does not place the caret")
             equal(form.save.enabled ~= false, true)
             for _, input in ipairs({form.name, form.delay, form.file}) do equal(input.editable, true) end
             form:fill(); form.save:DoClick()
             equal(packetCount(client, "SlicerSetupEditSave"), 1, "Correction must remain available")
+            equal(#client.focusCalls, 1, "Corrected save adds no focus request")
         end)
     end
 
@@ -159,24 +163,90 @@ return function(gmod, test, equal)
         local values = {name = " \t ", delay = "0", file = ""}
         local corrections = {name = "  Terminal  ", delay = "0.5", file = "  Secret  "}
         form.file:RequestFocus()
-        for _, field in ipairs({"name", "delay", "file"}) do
+        for index, field in ipairs({"name", "delay", "file"}) do
             form:fill(values.name, values.delay, values.file)
             form.save:DoClick()
             equal(form.status.text, fieldFeedback[field])
             equal(packetCount(client), 0); equal(form.frame.valid, true)
             equal(form.name:GetValue(), values.name); equal(form.delay:GetValue(), values.delay)
             equal(form.file:GetValue(), values.file)
-            equal(client.focusedPanel, form.file, "Feedback must not move focus")
+            equal(client.focusedPanel, form[field], "Focus the first rejected text entry only")
+            equal(#client.focusCalls, index + 1); equal(#client.caretCalls, 0)
+            equal(form.frame.popupCalls, 1)
             values[field] = corrections[field]
         end
         form:fill(values.name, values.delay, values.file); form.save:DoClick()
         local submitted = assert(client.lastMessage("SlicerSetupEditSave")).values[3]
         equal(submitted.name, corrections.name); equal(submitted.delay, 0.5)
         equal(submitted.fileName, corrections.file); equal(packetCount(client), 1)
+        equal(#client.focusCalls, 4, "Corrected save adds no focus request")
         equal(#owner.chats, 0, "Edit validation uses its existing status control")
         reply(client, "edit:one", true)
         equal(form.frame.valid, false)
     end)
+
+    test("edit correction focuses its captured form beside an independent draft", function()
+        local client, owner, _, first = fixture()
+        first:fill(" Terminal ", "0", " Secret ")
+        local other = open(client, owner, client.entity("consoleent"), "edit:other")
+        other:fill("Other", "3", "Other file"); other.file:RequestFocus()
+        first.save:DoClick()
+        equal(client.focusedPanel, first.delay); equal(#client.focusCalls, 2)
+        equal(first.status.text, fieldFeedback.delay)
+        equal(other.status.text, "Delay: positive finite seconds (e.g. 0.5). Then save.")
+        equal(other.name:GetValue(), "Other"); equal(other.file:GetValue(), "Other file")
+        equal(first.file:GetValue(), " Secret "); equal(packetCount(client), 0)
+        equal(#client.caretCalls, 0); equal(first.frame.popupCalls, 1); equal(other.frame.popupCalls, 1)
+    end)
+
+    for _, guard in ipairs({
+        "removed entry", "marked entry", "hidden entry", "disabled entry", "keyboard-disabled entry", "read-only entry",
+        "hidden form", "retired form", "marked form", "replaced form", "pending form",
+    }) do
+        test("edit correction focus skips " .. guard .. " after feedback", function()
+            local client, owner, console, form = fixture()
+            form:fill(" Terminal ", "0", " Secret "); form.file:RequestFocus()
+            local replacement, expectedFocus
+            local setColor = form.status.SetTextColor
+            function form.status:SetTextColor(...)
+                setColor(self, ...)
+                self.SetTextColor = setColor
+                if guard == "removed entry" then form.delay:Remove()
+                elseif guard == "marked entry" then form.delay.markedForDeletion = true
+                elseif guard == "hidden entry" then form.delay:Hide()
+                elseif guard == "disabled entry" then form.delay:SetEnabled(false)
+                elseif guard == "keyboard-disabled entry" then form.delay:SetKeyboardInputEnabled(false)
+                elseif guard == "read-only entry" then form.delay:SetEditable(false)
+                elseif guard == "hidden form" then form.frame:Hide()
+                elseif guard == "retired form" then client.deferPanelRemoval = true; form.frame:Close()
+                elseif guard == "marked form" then form.frame.markedForDeletion = true
+                elseif guard == "replaced form" then
+                    client.deferPanelRemoval = true
+                    replacement = open(client, owner, console, "edit:replacement")
+                    replacement:fill("Replacement", "6", "Replacement file")
+                elseif guard == "pending form" then
+                    form.delay:SetText("2"); form.save:DoClick()
+                    form.delay:SetKeyboardInputEnabled(true)
+                end
+                expectedFocus = client.focusedPanel
+            end
+            form.save:DoClick()
+            equal(#client.focusCalls, 1, "Feedback must not focus a no-longer-eligible entry")
+            equal(client.focusedPanel, expectedFocus); equal(#client.caretCalls, 0)
+            equal(form.name.text, " Terminal "); equal(form.file.text, " Secret ")
+            equal(form.delay.text, guard == "pending form" and "2" or "0")
+            equal(#owner.chats, 0)
+            equal(packetCount(client, "SlicerSetupEditSave"), guard == "pending form" and 1 or 0)
+            local cancelled = guard == "retired form" or guard == "replaced form"
+            equal(packetCount(client, "SlicerSetupEditCancel"), cancelled and 1 or 0)
+            equal(packetCount(client), (cancelled or guard == "pending form") and 1 or 0)
+            if guard ~= "pending form" then equal(form.status.text, fieldFeedback.delay) end
+            if replacement then
+                equal(replacement.name:GetValue(), "Replacement"); equal(replacement.delay:GetValue(), "6")
+                equal(replacement.file:GetValue(), "Replacement file"); equal(replacement.frame.popupCalls, 1)
+            end
+        end)
+    end
 
     for _, sample in ipairs({
         {"fractional", 0.12345678901234566},
@@ -226,7 +296,9 @@ return function(gmod, test, equal)
         local client, _, _, form = fixture()
         form:fill(); form.save:DoClick(); form.save:DoClick()
         equal(packetCount(client, "SlicerSetupEditSave"), 1, "Pending Save must not resend")
+        local focused, focusCount = client.focusedPanel, #client.focusCalls
         reply(client, "edit:one", false, "The delay is invalid; choose a positive number.")
+        equal(client.focusedPanel, focused); equal(#client.focusCalls, focusCount, "Server rejection does not infer a focus target")
         equal(form.frame.valid, true); equal(form.name:GetValue(), "New terminal")
         equal(form.delay:GetValue(), "4.5"); equal(form.file:GetValue(), "New secret")
         equal(form.save.enabled, true); equal(form.cancel.text, "Cancel")

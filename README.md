@@ -20,7 +20,11 @@ and terminal-driven downloads or door unlocking.
    Local validation identifies the first invalid field in display order: console
    name, delay, folder, then filename. The saved-settings editor checks console
    name, delay, then filename. Each message explains that field's existing rule;
-   the draft stays editable until all fields are valid.
+   the draft stays editable until all fields are valid. Rejected names, delays
+   and filenames request keyboard focus on that text entry without changing
+   its text or placing the caret. A folder error only shows its message; it
+   does not move focus or open the folder list. Focus is skipped if feedback
+   closes, replaces, hides or submits the form, or the entry cannot take input.
 3. Accepted `tools` setup selects that terminal for its creator. Look at the
    intended console and type `!setEntity`; check the named selection confirmation.
    Then look at a `func_door` or `func_door_rotating` and type `!setEntity` again
@@ -958,6 +962,13 @@ small Garry's Mod API doubles. Its loader translates GLua `!`, `!=`, and `//`
 comments for stock Lua without modifying command strings. The harness supports
 Lua 5.1 and newer. Earlier changes were checked with Lua 5.1, LuaJIT 2.1 and
 Lua 5.3 through the installed Lupa runtimes.
+
+Correction-focus tests check the exact rejected entry, unchanged folder focus,
+raw drafts, valid/corrected submissions, independent forms and eligibility
+changes during final status feedback. The enabled-state double follows the
+harness convention that an unset enabled flag is enabled; it does not establish
+the native default. These checks do not certify native Derma focus transfer,
+caret behavior, rendering or multiplayer delivery.
 
 Coverage includes malicious/malformed network requests, concurrent users,
 creator-only setup, stale/deleted entities, independent door links, session

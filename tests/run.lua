@@ -223,13 +223,15 @@ local function openClient(fileType)
     return env, player
 end
 
-local function openSetup(env, entityName, player)
+local function openSetup(env, entityName, player, targetToken)
     player = player or env.entity("player")
     player.chats = player.chats or {}
     if not player.Alive then function player:Alive() return true end end
     function player:ChatPrint(message) table.insert(self.chats, message) end
     local start = #env.panels
-    env.receive("PlayerSpawnedConsole", nil, player, entityName or "console1")
+    local packet = {player, entityName or "console1"}
+    if targetToken then packet[3] = "slicer-initial-v2:" .. targetToken end
+    env.receive("PlayerSpawnedConsole", nil, (table.unpack or unpack)(packet))
     local form, entries = {player = player}, {}
     for i = start + 1, #env.panels do
         local panel = env.panels[i]
@@ -286,6 +288,7 @@ test("setup submits current fields without requiring focus loss", function()
     equal(information[4], "Secret")
     equal(information[5], "console1")
     equal(#information, 6, "Original five fields plus correlation token")
+    equal(#env.focusCalls, 0, "Valid setup does not request focus")
     assert(type(information[6]) == "string" and information[6]:match("^[1-9]%d*$"), "Canonical request token")
     acceptClientSetup(env, form)
 end)
@@ -374,6 +377,9 @@ for _, invalid in ipairs({
         equal(#form.player.chats, 1)
         equal(form.player.chats[1], setupFieldFeedback[invalid.field])
         equal(form.status.text, setupFieldFeedback[invalid.field])
+        equal(env.focusedPanel, invalid.field == "folder" and form.frame or form[invalid.field])
+        equal(#env.focusCalls, invalid.field == "folder" and 0 or 1)
+        equal(#env.caretCalls, 0, "Validation does not place the caret")
         equal(form.name:GetValue(), values.name); equal(form.delay:GetValue(), values.delay)
         equal(form.folder:GetSelected(), values.folder); equal(form.file:GetValue(), values.file)
         equal(form.done.enabled, true); equal(form.folder.enabled, true)
@@ -389,13 +395,16 @@ test("setup reports the first invalid field in visible order while retaining the
     form.file:RequestFocus()
     for index, field in ipairs({"name", "delay", "folder", "file"}) do
         form:fill(values.name, values.delay, values.folder, values.file, false)
+        local focused, focusCount = env.focusedPanel, #env.focusCalls
         form.done:DoClick()
         equal(form.status.text, setupFieldFeedback[field])
         equal(#form.player.chats, index); equal(form.player.chats[index], setupFieldFeedback[field])
         equal(#env.messages, 0); equal(form.frame.valid, true)
         equal(form.name:GetValue(), values.name); equal(form.delay:GetValue(), values.delay)
         equal(form.folder:GetSelected(), values.folder); equal(form.file:GetValue(), values.file)
-        equal(env.focusedPanel, form.file, "Feedback must not move focus")
+        equal(env.focusedPanel, field == "folder" and focused or form[field], "Focus the first rejected text entry only")
+        equal(#env.focusCalls, focusCount + (field == "folder" and 0 or 1))
+        equal(#env.caretCalls, 0); equal(form.frame.popupCalls, 1)
         values[field] = corrections[field]
     end
     form:fill(values.name, values.delay, values.folder, values.file, false)
@@ -404,8 +413,74 @@ test("setup reports the first invalid field in visible order while retaining the
     equal(submitted[1], corrections.name); equal(submitted[2], 0.5)
     equal(submitted[3], corrections.folder); equal(submitted[4], corrections.file)
     equal(#env.messages, 1); equal(#form.player.chats, 4)
+    equal(#env.focusCalls, 4, "Corrected submission adds no focus request")
     acceptClientSetup(env, form)
 end)
+
+test("setup correction focuses its captured modern form beside an independent draft", function()
+    local env = gmod.client()
+    local first = openSetup(env, "same-original-name", nil, "101")
+    first:fill("Terminal", "0", "data", " Secret ", false)
+    local other = openSetup(env, "same-original-name", nil, "102")
+    other:fill("Other", "3", "server", "Other file", false)
+    other.file:RequestFocus()
+    first.done:DoClick()
+    equal(env.focusedPanel, first.delay); equal(#env.focusCalls, 2)
+    equal(first.status.text, setupFieldFeedback.delay)
+    equal(other.status.text, "Delay: positive finite seconds (e.g. 0.5). Then choose Done.")
+    equal(other.name:GetValue(), "Other"); equal(other.file:GetValue(), "Other file")
+    equal(first.file:GetValue(), " Secret "); equal(#env.messages, 0)
+    equal(#env.caretCalls, 0); equal(first.frame.popupCalls, 1); equal(other.frame.popupCalls, 1)
+end)
+
+for _, guard in ipairs({
+    "removed entry", "marked entry", "hidden entry", "disabled entry", "keyboard-disabled entry", "read-only entry",
+    "hidden form", "retired form", "marked form", "replaced legacy form", "replaced modern form", "pending form",
+}) do
+    test("setup correction focus skips " .. guard .. " after feedback", function()
+        local env = gmod.client()
+        local targetToken = guard == "replaced modern form" and "103" or nil
+        local form = openSetup(env, "guard-console", nil, targetToken)
+        form:fill(" Terminal ", "0", "data", " Secret ", false)
+        form.file:RequestFocus()
+        local replacement, expectedFocus
+        local setColor = form.status.SetTextColor
+        function form.status:SetTextColor(...)
+            setColor(self, ...)
+            self.SetTextColor = setColor -- Only the outer validation feedback injects a change.
+            if guard == "removed entry" then form.delay:Remove()
+            elseif guard == "marked entry" then form.delay.markedForDeletion = true
+            elseif guard == "hidden entry" then form.delay:Hide()
+            elseif guard == "disabled entry" then form.delay:SetEnabled(false)
+            elseif guard == "keyboard-disabled entry" then form.delay:SetKeyboardInputEnabled(false)
+            elseif guard == "read-only entry" then form.delay:SetEditable(false)
+            elseif guard == "hidden form" then form.frame:Hide()
+            elseif guard == "retired form" then env.deferPanelRemoval = true; form.frame:Close()
+            elseif guard == "marked form" then form.frame.markedForDeletion = true
+            elseif guard == "replaced legacy form" or guard == "replaced modern form" then
+                env.deferPanelRemoval = true; form.frame:Close()
+                replacement = openSetup(env, "guard-console", form.player, targetToken)
+                replacement:fill("Replacement", "6", "tools", "Replacement file", false)
+            elseif guard == "pending form" then
+                form.delay:SetText("2"); form.done:DoClick()
+                form.delay:SetKeyboardInputEnabled(true) -- Keep pending ownership independently necessary.
+            end
+            expectedFocus = env.focusedPanel
+        end
+        form.done:DoClick()
+        equal(#env.focusCalls, 1, "Feedback must not focus a no-longer-eligible entry")
+        equal(env.focusedPanel, expectedFocus); equal(#env.caretCalls, 0)
+        equal(form.name.text, " Terminal "); equal(form.file.text, " Secret ")
+        equal(form.delay.text, guard == "pending form" and "2" or "0")
+        equal(#form.player.chats, 1); equal(form.player.chats[1], setupFieldFeedback.delay)
+        equal(#env.messages, guard == "pending form" and 1 or 0)
+        if guard ~= "pending form" then equal(form.status.text, setupFieldFeedback.delay) end
+        if replacement then
+            equal(replacement.name:GetValue(), "Replacement"); equal(replacement.delay:GetValue(), "6")
+            equal(replacement.file:GetValue(), "Replacement file"); equal(replacement.frame.popupCalls, 1)
+        end
+    end)
+end
 
 test("an invalid setup can be corrected and submitted", function()
     local env = gmod.client()
