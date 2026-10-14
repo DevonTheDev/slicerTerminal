@@ -320,6 +320,11 @@ local function configureFolderButtons(input, parent, info, page, layout)
     page.RefreshFolderButtons()
 end
 
+local function setFileRowText(row, text)
+    row:SetText(text)
+    row:SetTooltip(text)
+end
+
 local function layoutFileRow(row, layout, index, page)
     trackPlayerGeometry(page, function()
         setPlayerRect(row, layout.rowX, layout.rowY + (index - 1) * (layout.rowHeight + layout.gap),
@@ -1418,38 +1423,38 @@ end
                            local dataRequiredFile = vgui.Create("DTextEntry", insideData)
                            layoutFileRow(dataRequiredFile, layout, 2, dataPage)
                            dataRequiredFile:SetFont("HackingFont")
-                           dataRequiredFile:SetText(string.upper(consoleInfo["fileName"]) .. ".data")
+                           setFileRowText(dataRequiredFile, string.upper(consoleInfo["fileName"]) .. ".data")
                            dataRequiredFile:SetEditable(false)
 
                            local randomFile1 = vgui.Create("DTextEntry", insideData)
                            layoutFileRow(randomFile1, layout, 1, dataPage)
                            randomFile1:SetFont("HackingFont")
-                           randomFile1:SetText(decoyFilenames[1] .. ".data")
+                           setFileRowText(randomFile1, decoyFilenames[1] .. ".data")
                            randomFile1:SetEditable(false)
 
                            local randomFile2 = vgui.Create("DTextEntry", insideData)
                            layoutFileRow(randomFile2, layout, 3, dataPage)
                            randomFile2:SetFont("HackingFont")
-                           randomFile2:SetText(decoyFilenames[2] .. ".data")
+                           setFileRowText(randomFile2, decoyFilenames[2] .. ".data")
                            randomFile2:SetEditable(false)
                        else
                            local randomFile1 = vgui.Create("DTextEntry", insideData)
                            layoutFileRow(randomFile1, layout, 2, dataPage)
                            randomFile1:SetFont("HackingFont")
                            randomFile1:SetEditable(false)
-                           randomFile1:SetText("consoleLogs.data")
+                           setFileRowText(randomFile1, "consoleLogs.data")
 
                            local randomFile2 = vgui.Create("DTextEntry", insideData)
                            layoutFileRow(randomFile2, layout, 1, dataPage)
                            randomFile2:SetFont("HackingFont")
                            randomFile2:SetEditable(false)
-                           randomFile2:SetText("recentlyDeleted.data")
+                           setFileRowText(randomFile2, "recentlyDeleted.data")
 
                            local randomFile3 = vgui.Create("DTextEntry", insideData)
                            layoutFileRow(randomFile3, layout, 3, dataPage)
                            randomFile3:SetFont("HackingFont")
                            randomFile3:SetEditable(false)
-                           randomFile3:SetText("cleaningLog.data")
+                           setFileRowText(randomFile3, "cleaningLog.data")
                        end
 
                        secondPage:Hide()
@@ -1573,38 +1578,38 @@ end
                            local serverRequiredFile = vgui.Create("DTextEntry", insideServer)
                            layoutFileRow(serverRequiredFile, layout, 2, serverPage)
                            serverRequiredFile:SetFont("HackingFont")
-                           serverRequiredFile:SetText(string.upper(consoleInfo["fileName"]) .. ".sys")
+                           setFileRowText(serverRequiredFile, string.upper(consoleInfo["fileName"]) .. ".sys")
                            serverRequiredFile:SetEditable(false)
 
                            local randomFile1 = vgui.Create("DTextEntry", insideServer)
                            layoutFileRow(randomFile1, layout, 1, serverPage)
                            randomFile1:SetFont("HackingFont")
-                           randomFile1:SetText(decoyFilenames[1] .. ".sys")
+                           setFileRowText(randomFile1, decoyFilenames[1] .. ".sys")
                            randomFile1:SetEditable(false)
 
                            local randomFile2 = vgui.Create("DTextEntry", insideServer)
                            layoutFileRow(randomFile2, layout, 3, serverPage)
                            randomFile2:SetFont("HackingFont")
-                           randomFile2:SetText(decoyFilenames[2] .. ".sys")
+                           setFileRowText(randomFile2, decoyFilenames[2] .. ".sys")
                            randomFile2:SetEditable(false)
                        else
                            local randomFile1 = vgui.Create("DTextEntry", insideServer)
                            layoutFileRow(randomFile1, layout, 2, serverPage)
                            randomFile1:SetFont("HackingFont")
                            randomFile1:SetEditable(false)
-                           randomFile1:SetText("updateCheck.sys")
+                           setFileRowText(randomFile1, "updateCheck.sys")
 
                            local randomFile2 = vgui.Create("DTextEntry", insideServer)
                            layoutFileRow(randomFile2, layout, 1, serverPage)
                            randomFile2:SetFont("HackingFont")
                            randomFile2:SetEditable(false)
-                           randomFile2:SetText("connections.sys")
+                           setFileRowText(randomFile2, "connections.sys")
 
                            local randomFile3 = vgui.Create("DTextEntry", insideServer)
                            layoutFileRow(randomFile3, layout, 3, serverPage)
                            randomFile3:SetFont("HackingFont")
                            randomFile3:SetEditable(false)
-                           randomFile3:SetText("idCheck.sys")
+                           setFileRowText(randomFile3, "idCheck.sys")
                        end
 
                        secondPage:Hide()
@@ -1728,38 +1733,38 @@ end
                            local toolsRequiredFile = vgui.Create("DTextEntry", insideTools)
                            layoutFileRow(toolsRequiredFile, layout, 2, toolsPage)
                            toolsRequiredFile:SetFont("HackingFont")
-                           toolsRequiredFile:SetText(string.upper(consoleInfo["fileName"]) .. ".exe")
+                           setFileRowText(toolsRequiredFile, string.upper(consoleInfo["fileName"]) .. ".exe")
                            toolsRequiredFile:SetEditable(false)
 
                            local randomFile1 = vgui.Create("DTextEntry", insideTools)
                            layoutFileRow(randomFile1, layout, 1, toolsPage)
                            randomFile1:SetFont("HackingFont")
-                           randomFile1:SetText(decoyFilenames[1] .. ".exe")
+                           setFileRowText(randomFile1, decoyFilenames[1] .. ".exe")
                            randomFile1:SetEditable(false)
 
                            local randomFile2 = vgui.Create("DTextEntry", insideTools)
                            layoutFileRow(randomFile2, layout, 3, toolsPage)
                            randomFile2:SetFont("HackingFont")
-                           randomFile2:SetText(decoyFilenames[2] .. ".sys")
+                           setFileRowText(randomFile2, decoyFilenames[2] .. ".sys")
                            randomFile2:SetEditable(false)
                        else
                            local randomFile1 = vgui.Create("DTextEntry", insideTools)
                            layoutFileRow(randomFile1, layout, 2, toolsPage)
                            randomFile1:SetFont("HackingFont")
                            randomFile1:SetEditable(false)
-                           randomFile1:SetText("mainControl.exe")
+                           setFileRowText(randomFile1, "mainControl.exe")
 
                            local randomFile2 = vgui.Create("DTextEntry", insideTools)
                            layoutFileRow(randomFile2, layout, 1, toolsPage)
                            randomFile2:SetFont("HackingFont")
                            randomFile2:SetEditable(false)
-                           randomFile2:SetText("washingMachine.exe")
+                           setFileRowText(randomFile2, "washingMachine.exe")
 
                            local randomFile3 = vgui.Create("DTextEntry", insideTools)
                            layoutFileRow(randomFile3, layout, 3, toolsPage)
                            randomFile3:SetFont("HackingFont")
                            randomFile3:SetEditable(false)
-                           randomFile3:SetText("breathing.exe")
+                           setFileRowText(randomFile3, "breathing.exe")
                        end
 
                        secondPage:Hide()

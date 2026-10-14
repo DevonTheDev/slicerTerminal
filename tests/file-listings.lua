@@ -70,6 +70,9 @@ return function(gmod, test, equal)
             if panel.class == "DTextEntry" and not panel.OnEnter then found[#found + 1] = panel end
         end
         equal(#found, 3, "A file page must retain its three display rows")
+        for _, row in ipairs(found) do
+            equal(row.tooltip, row:GetValue(), "Each file tooltip must preserve the complete displayed filename")
+        end
         return found
     end
     local function snapshot(entry)
@@ -131,7 +134,9 @@ return function(gmod, test, equal)
     end
 
     for _, kind in ipairs(kinds) do
-        for _, file in ipairs({"Secret", "hitlist", "HiTlIsT", "consolelogs", "ConsoleLogs", "important", "ImPoRtAnT"}) do
+        -- 42 three-byte characters plus two ASCII letters reach the supported 128-byte limit.
+        for _, file in ipairs({"Secret", "hitlist", "HiTlIsT", "consolelogs", "ConsoleLogs", "important", "ImPoRtAnT",
+            string.rep("界", 42) .. "Ab"}) do
             test(kind.folder .. " listing keeps distinct basenames after normal setup of " .. file, function()
                 local session = fixture(kind, file)
                 local listing = rows(enter(session))
