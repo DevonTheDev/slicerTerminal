@@ -80,6 +80,16 @@ return function(gmod, test, equal)
         assert(heading and objective, "Keep the terminal heading and file objective")
         local commands, quit = button(page, "Commands (/help)"), button(page, "Quit terminal")
         local reserved = {heading, objective, commands, quit, entry}
+        local backs = children(page, function(p) return p.class == "DButton" and p.text == "Back to folders" end)
+        local filePage = heading.text:find("/{_", 1, true) ~= nil
+        equal(#backs, filePage and 1 or 0, "Only file pages offer Back to folders")
+        if filePage then
+            local back = backs[1]
+            reserved[#reserved + 1] = back
+            equal(back.x, 364); equal(back.width, 160); equal(back.height, 30)
+            equal(back.y, commands.y)
+            equal(back.x - quit.x - quit.width, 12, "Keep the footer sibling gap")
+        end
         if measureOnly then return objective.y + objective.height, math.min(commands.y, quit.y), reserved end
         for i, panel in ipairs(reserved) do
             contained(panel, width, height, "Reserved control " .. i)

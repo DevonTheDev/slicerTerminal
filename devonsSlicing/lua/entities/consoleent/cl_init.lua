@@ -298,9 +298,11 @@ hook.Add("OnScreenSizeChanged", "SlicerPlayerTerminalReflow", function()
 end)
 
 local function configureCommandAssistance(input, parent, info, stage, history, session)
-    local layout = session.layout
+    local layout, page = session.layout, session.pages[stage]
+    page.input = input
     input.IsCurrentTerminalPage = function()
-        return activeTerminalSession == session and isLiveCommandPanel(parent) and isLiveCommandPanel(input)
+        return activeTerminalSession == session and session.pages[stage] == page
+            and isLiveCommandPanel(parent) and isLiveCommandPanel(input)
     end
     input.QuitTerminal = function()
         if input.IsCurrentTerminalPage() then quitTerminal(session, parent) end
@@ -376,10 +378,49 @@ local function configureCommandAssistance(input, parent, info, stage, history, s
     quit.DoClick = function()
         if isLiveCommandPanel(quit) then quitTerminal(session, parent) end
     end
-    trackPlayerGeometry(session.pages[stage], function()
+    local back
+    if stage == "data" or stage == "server" or stage == "tools" then
+        local folders = session.pages.folders
+        local function canReturn()
+            return input.IsCurrentTerminalPage() and session.pages.folders == folders
+                and isPlayerLayoutPanel(folders.frame) and isPlayerLayoutPanel(folders.input)
+                and not timer.Exists("AccessDelay") and not timer.Exists("DownloadDataFile")
+                and not timer.Exists("DownloadServerFile")
+        end
+        input.ReturnToFolders = function()
+            if not canReturn() then return end
+            -- Retire ownership before Remove can deliver another callback.
+            session.pages[stage] = nil
+            closeCommandHelp()
+            parent:Remove()
+            if stage == "data" then insideData = nil
+            elseif stage == "server" then insideServer = nil
+            else insideTools = nil end
+            timer.Remove("dataPageGlitch")
+            timer.Remove("dataPageReturn")
+            folders.input:SetPlaceholderText(COMMAND_PROMPT)
+            folders.input:SetPlaceholderColor(Color(140, 140, 140, 220))
+            folders.input:SetText("")
+            folders.input:SetTextColor(Color(36, 209, 36, 255))
+            timer.Start("secondPageGlitch")
+            folders.frame:Show()
+        end
+        back = vgui.Create("DButton", parent)
+        page.returnButton = back
+        back:SetText("Back to folders")
+        back.DoClick = function()
+            if isLiveCommandPanel(back) then input.ReturnToFolders() end
+        end
+        back.Think = function(self)
+            if isPlayerLayoutPanel(self) then self:SetEnabled(canReturn()) end
+        end
+        back:Think()
+    end
+    trackPlayerGeometry(page, function()
         setPlayerRect(input, layout.margin, layout.inputY, layout.width - layout.margin * 2, layout.inputHeight)
         setPlayerRect(button, layout.margin, layout.actionsY, 160, 30)
         setPlayerRect(quit, layout.margin + 172, layout.actionsY, 160, 30)
+        setPlayerRect(back, layout.margin + 344, layout.actionsY, 160, 30)
     end)
 end
 
@@ -1383,23 +1424,13 @@ end
                             surface.PlaySound("code_enter.wav")
 
                            if(string.lower(dataInputTerminal:GetValue()) == "//[" .. consoleInfo["name"] .. "]/" .. acceptedFolders[1]) then
-                               insideData:Remove()
-                               insideData = nil
-                               timer.Remove("dataPageGlitch")
-                               timer.Remove("dataPageReturn")
-
-                               -- Resets the input terminal
-                               inputTerminal2:SetPlaceholderText(COMMAND_PROMPT)
-                               inputTerminal2:SetPlaceholderColor(Color(140, 140, 140, 220))
-                               inputTerminal2:SetText("")
-                               inputTerminal2:SetTextColor(Color(36, 209, 36, 255))
-                               timer.Start("secondPageGlitch")
-                               secondPage:Show() -- Shows the previous page
+                               dataInputTerminal.ReturnToFolders()
                                return
                            end
                            if(string.lower(dataInputTerminal:GetValue()) == "/d" .. acceptedFolders[1] .. "/" .. consoleInfo["fileName"] .. ".data") then
                                if(consoleInfo["fileType"] == "data") then
                                    dataInputTerminal:SetEditable(false) -- Lock before another input callback can run.
+                                   if isPlayerLayoutPanel(dataPage.returnButton) then dataPage.returnButton:SetEnabled(false) end
                                    timer.Create("DownloadDataFile", consoleInfo["delay"], 1, function()
                                        if not dataInputTerminal.IsCurrentTerminalPage() then return end
                                        closeConsoleUI()
@@ -1547,23 +1578,13 @@ end
                         surface.PlaySound("code_enter.wav")
 
                            if(string.lower(serverInputTerminal:GetValue()) == "//[" .. consoleInfo["name"] .. "]/" .. acceptedFolders[2]) then
-                               insideServer:Remove()
-                               insideServer = nil
-                               timer.Remove("dataPageGlitch")
-                               timer.Remove("dataPageReturn")
-
-                               -- Resets the input terminal
-                               inputTerminal2:SetPlaceholderText(COMMAND_PROMPT)
-                               inputTerminal2:SetPlaceholderColor(Color(140, 140, 140, 220))
-                               inputTerminal2:SetText("")
-                               inputTerminal2:SetTextColor(Color(36, 209, 36, 255))
-                               timer.Start("secondPageGlitch")
-                               secondPage:Show() -- Shows the previous page
+                               serverInputTerminal.ReturnToFolders()
                                return
                            end
                            if(string.lower(serverInputTerminal:GetValue()) == "/d" .. acceptedFolders[2] .. "/" .. consoleInfo["fileName"] .. ".sys") then
                                if(consoleInfo["fileType"] == "server") then
                                    serverInputTerminal:SetEditable(false) -- Lock before another input callback can run.
+                                   if isPlayerLayoutPanel(serverPage.returnButton) then serverPage.returnButton:SetEnabled(false) end
                                    timer.Create("DownloadServerFile", consoleInfo["delay"], 1, function()
                                        if not serverInputTerminal.IsCurrentTerminalPage() then return end
                                        closeConsoleUI()
@@ -1711,18 +1732,7 @@ end
                         surface.PlaySound("code_enter.wav")
 
                            if(string.lower(toolsInputTerminal:GetValue()) == "//[" .. consoleInfo["name"] .. "]/" .. acceptedFolders[3]) then
-                               insideTools:Remove()
-                               insideTools = nil
-                               timer.Remove("dataPageGlitch")
-                               timer.Remove("dataPageReturn")
-
-                               -- Resets the input terminal
-                               inputTerminal2:SetPlaceholderText(COMMAND_PROMPT)
-                               inputTerminal2:SetPlaceholderColor(Color(140, 140, 140, 220))
-                               inputTerminal2:SetText("")
-                               inputTerminal2:SetTextColor(Color(36, 209, 36, 255))
-                               timer.Start("secondPageGlitch")
-                               secondPage:Show() -- Shows the previous page
+                               toolsInputTerminal.ReturnToFolders()
                                return
                            end
                            if(string.lower(toolsInputTerminal:GetValue()) == "/r" .. acceptedFolders[3] .. "/" .. consoleInfo["fileName"] .. ".exe") then

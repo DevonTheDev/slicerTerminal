@@ -900,6 +900,13 @@ and filename. A folder only offers a download or tool command when it contains
 the target file; every folder includes its return command. Help can be closed
 without quitting, and it does not submit an action or bypass a countdown.
 
+Inside data, server and tools folders, **Back to folders** returns to the same
+folder-selection screen and clears its command entry. It closes Commands and
+keeps your current terminal reservation, so you can recover from a wrong folder
+without logging in again. The existing typed return command does the same.
+Back is unavailable during either file download; Commands and Quit remain
+available. Running the tools file still completes and closes the terminal.
+
 Choose **Insert command** beneath a reference entry to replace the current
 draft with that exact command. Help closes and the command entry receives focus
 with its caret at the end. You can edit the draft before pressing Enter; only
@@ -1016,6 +1023,15 @@ same terminal. These client guards prevent stale local controls from quitting a
 later session; they do not add session tokens or network replay protection to
 the existing quit protocol. Native button input and rendering still need the
 smoke checks below.
+
+Back-control tests exercise wrong-folder recovery and accepted completion for
+all three target folders, shared button/typed cleanup, repeated visits with
+Commands open, immediate countdown rejection, and retained callbacks after
+return, quit, death, completion or session replacement. Hidden, removed and
+deferred-deletion controls cannot navigate. The existing initial-layout and
+resize tests include the new footer control and sibling spacing at 640×480 and
+larger sizes. These API-double checks do not certify native button input,
+Derma focus, font fit or rendering; use the in-game smoke checks below.
 
 Command-directory tests exercise real chat hooks for all four static topics,
 alive/dead access without creator or admin checks, exact syntax, fixed malformed
@@ -1330,7 +1346,15 @@ emulated. Before a live rollout, use a test server to check:
 - Strip or switch away from the hacking tool during each completion flow;
   confirm no success is printed, the terminal remains available and another
   player can use it. Re-equip and retry normally
-- Enter a folder, return, and re-enter several times; check for Lua errors
+- At 640×480 and after resizing, enter each folder and click Back to folders
+  with Commands open and closed. Confirm the footer labels fit, controls do not
+  overlap, and the same folder-selection screen returns with an empty command
+  entry. Alternate the button and typed return across repeated visits, recover
+  from a wrong folder, and complete each target type normally
+- Start each download and immediately click Back before the countdown redraws;
+  confirm it is disabled, the page stays open, Commands remains readable and
+  Quit still works. Repeat after the first countdown update and check for Lua
+  errors after return, quit, death and opening another terminal
 - Open Commands or type `/help` at each stage; close help and finish normally.
   Recall and edit a command with Up/Down, then quit and open a new terminal to
   verify history is fresh. Check help wrapping and scrolling with long names

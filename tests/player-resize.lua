@@ -25,6 +25,13 @@ return function(gmod, test, equal)
         assert(heading and objective)
         local commands, quit = helper.button(page, "Commands (/help)"), helper.button(page, "Quit terminal")
         local reserved = {heading, objective, commands, quit, entry}
+        if stage == "data" or stage == "server" or stage == "tools" then
+            local back = helper.button(page, "Back to folders")
+            reserved[#reserved + 1] = back
+            equal(back.x, 364); equal(back.width, 160); equal(back.height, 30)
+            equal(back.y, commands.y)
+            equal(back.x - quit.x - quit.width, 12, "Keep the footer sibling gap after reflow")
+        end
         for i, control in ipairs(reserved) do
             contained(control, width, height)
             for j = 1, i - 1 do separate(control, reserved[j]) end
