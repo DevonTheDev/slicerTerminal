@@ -598,6 +598,7 @@ net.Receive("PlayerSpawnedConsole", function()
     end
 
     local fileType = vgui.Create("DComboBox", initialParent)
+    fileType:SetText("Choose folder")
     fileType:AddChoice("data", nil, false, nil)
     fileType:AddChoice("server", nil, false, nil)
     fileType:AddChoice("tools", nil, false, nil)

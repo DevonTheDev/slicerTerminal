@@ -52,6 +52,8 @@ return function(gmod, test, equal)
         equal(#entries, 3, "Keep the three existing text entries")
         equal(#client.panels - first + 1, 8, "Keep one frame, six original controls and one status label")
         form.name, form.delay, form.file = entries[1], entries[2], entries[3]
+        equal(form.folder.text, "Choose folder", "Prompt identifies the empty folder chooser")
+        equal(form.folder:GetSelected(), nil, "Display text must not select a folder")
         form.controls = {
             {"console name", form.name}, {"delay", form.delay}, {"folder", form.folder},
             {"filename", form.file}, {"Set up later", form.later}, {"Done", form.done},
@@ -147,6 +149,22 @@ return function(gmod, test, equal)
         return copy
     end
 
+    test("initial folder prompt refuses submission until a folder is selected", function()
+        local _, client, owner, _, form = fixture(640, 480)
+        form.name:SetText("  Draft  "); form.delay:SetText("2."); form.file:SetText("  File  ")
+        form.file:RequestFocus()
+        local focusCalls = #client.focusCalls
+        form.done:DoClick()
+        equal(form.status.text, "Invalid folder: choose data, server, or tools.")
+        equal(owner.chats[#owner.chats], form.status.text)
+        equal(#client.messages, 0, "Prompt alone must not transmit setup")
+        equal(form.frame.valid, true); equal(form.folder:GetSelected(), nil)
+        equal(form.folder.text, "Choose folder"); equal(client.focusedPanel, form.file)
+        equal(#client.focusCalls, focusCalls, "Folder validation remains status-only")
+        equal(form.name:GetValue(), "  Draft  "); equal(form.delay:GetValue(), "2.")
+        equal(form.file:GetValue(), "  File  ")
+    end)
+
     for _, size in ipairs(sizes) do
         local width, height = size[1], size[2]
         local label = width .. "x" .. height
@@ -182,6 +200,20 @@ return function(gmod, test, equal)
                 equal(panel.x, rect[1]); equal(panel.y, rect[2])
                 equal(panel.width, rect[3]); equal(panel.height, rect[4])
             end
+            local newWidth, newHeight = width == 640 and 1920 or 640, height == 480 and 1080 or 480
+            client.ScrW, client.ScrH = function() return newWidth end, function() return newHeight end
+            client.fire("OnScreenSizeChanged", width, height)
+            assertVisible(form, newWidth, newHeight); assertColumn(form, newWidth, newHeight)
+            equal(form.folder:GetSelected(), "server", "Explicit choice survives reopening and reflow")
+            equal(#client.messages, 0, "Reopening and reflow do not submit")
+            form.done:DoClick()
+            local fields = assert(client.lastMessage("AdminFinishedCreation")).values[1]
+            equal(#client.messages, 1); equal(#fields, 6)
+            equal(fields[1], "Partial name"); equal(fields[2], 2)
+            equal(fields[3], "server"); equal(fields[4], "Partial file")
+            equal(fields[5].version, 2); equal(fields[5].originalName, console:GetName())
+            local _, accepted = relaySetup(server, client, owner)
+            equal(accepted.values[2].ok, true); equal(console.SlicerInformation.fileType, "server")
         end)
 
         for _, path in ipairs({"deferred", "unconfigured copy"}) do
