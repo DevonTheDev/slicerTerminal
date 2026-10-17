@@ -360,7 +360,7 @@ return function(gmod, test, equal)
         equal(intel(read(env, hacker), hacker, secret, true), awarded.values[1])
     end)
 
-    test("newer nonblank intel replaces unread previous intel while metadata and tools keep the newest", function()
+    test("newer nonblank intel replaces the latest pointer and display while prior awards stay saved", function()
         local env, owner, hacker, _, first = fixture()
         local older = finish(env, hacker, first) -- Intentionally never delivered to a client.
         local second = addConsole(env, owner, "server", "New mission intel")

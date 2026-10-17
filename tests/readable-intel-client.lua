@@ -64,7 +64,9 @@ return function(gmod, test, equal)
             assert(control.x >= 0 and control.y >= 0 and control.width > 0 and control.height > 0)
             assert(control.x + control.width <= frames[1].width and control.y + control.height <= frames[1].height)
         end
-        assert(frames[1].children[3].text:find("even if unread", 1, true))
+        assert(frames[1].children[3].text:find("newest 10 clues", 1, true))
+        equal(frames[1].children[4].text, "Saved intel")
+        equal(frames[1].children[4].class, "DButton")
     end)
 
     test("duplicate intel delivery neither creates a second window nor repeats focus", function()

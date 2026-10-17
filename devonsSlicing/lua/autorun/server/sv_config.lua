@@ -1,4 +1,5 @@
 AddCSLuaFile("slicer/sh_intel.lua")
+AddCSLuaFile("slicer/cl_intel_archive.lua")
 include("slicer/sh_intel.lua")
 include("autorun/server/sv_slicer_intel.lua")
 

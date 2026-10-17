@@ -1,5 +1,8 @@
 include("entities/consoleent/shared.lua")
 include("slicer/sh_intel.lua")
+include("slicer/cl_intel_archive.lua")
+local intelArchiveReaderOwner = {}
+slicerIntelReaderArchiveOwner = intelArchiveReaderOwner
 
 -- A private location snapshot, independent of forms and hacking sessions.
 local consoleLocation
@@ -1042,7 +1045,7 @@ net.Receive("SlicerSetupEditOpen", function()
         end
         intel.OnChange = updateBytes
         updateBytes()
-        label("Only the downloader's latest intel is kept. Newer intel replaces unread clues; disconnect loses it. Duplicator copies omit intel. Blank text clears it.", 510, 84)
+        label("The downloader can revisit their newest 10 clues for this connection. New clues remove the oldest when full; disconnect/map change loses them. Duplicator copies omit intel. Blank text clears it.", 510, 84)
     end
     local status = label("Delay: positive finite seconds (e.g. 0.5). Then save.", 286, 60, frame)
     local save = vgui.Create("DButton", frame)
@@ -2016,14 +2019,23 @@ local function presentIntel(record)
     body:SetEditable(false)
     local lifetime = vgui.Create("DLabel", frame)
     lifetime:SetWrap(true)
-    lifetime:SetText("Most recent intel for this connection. !readIntel reopens or recovers it. Newer intel replaces this, even if unread. Disconnect/map change loses it.")
+    lifetime:SetText("!readIntel reopens the latest clue. Saved intel lets you revisit the newest 10 clues for this connection. Disconnect/map change loses them.")
+    local saved = vgui.Create("DButton", frame)
+    saved:SetText("Saved intel")
+    saved.DoClick = function()
+        if intelReader ~= frame or slicerIntelReaderArchiveOwner ~= intelArchiveReaderOwner then return end
+        if not isLiveCommandPanel(frame) then return end
+        if intelReader ~= frame or slicerIntelReaderArchiveOwner ~= intelArchiveReaderOwner then return end
+        slicerOpenIntelArchive()
+    end
     function frame.reflow(screenWidth, screenHeight)
         if not isLiveCommandPanel(frame) or not supportedPlayerSize(screenWidth, screenHeight) then return end
         local width, height = math.min(620, screenWidth - 40), math.min(520, screenHeight - 40)
         setPlayerRect(frame, (screenWidth - width) / 2, (screenHeight - height) / 2, width, height)
         setPlayerRect(heading, 16, 32, width - 32, 40)
-        setPlayerRect(body, 16, 80, width - 32, height - 176)
-        setPlayerRect(lifetime, 16, height - 88, width - 32, 72)
+        setPlayerRect(body, 16, 80, width - 32, height - 212)
+        setPlayerRect(lifetime, 16, height - 124, width - 32, 72)
+        setPlayerRect(saved, 16, height - 44, 140, 28)
     end
     local width, height = ScrW(), ScrH()
     if not supportedPlayerSize(width, height) then width, height = 640, 480 end

@@ -33,3 +33,45 @@ function validSlicerIntelAward(value)
     return type(value) == "string" and #value <= 16 and value:match("^[1-9]%d*$") ~= nil
         and (#value < 16 or value <= "9007199254740991")
 end
+
+-- Archive metadata is a display projection only. Never normalize or rewrite
+-- the private award or the existing latest-intel payload.
+function slicerIntelArchiveName(value)
+    if type(value) ~= "string" or #value > 128 or value:find("[%z\1-\31\127]") then
+        return "[name unavailable]"
+    end
+    -- The body validator checks UTF-8 and C1 controls. Its whitespace-only
+    -- return value is irrelevant here: safe edge spaces remain byte-exact.
+    if normalizeSlicerIntel(value) == nil then return "[name unavailable]" end
+    return value
+end
+
+-- Receive lengths already exclude the engine's message-name header. Read a
+-- bounded application payload once, then require actual NULs and exact cursor
+-- consumption. A missing empty string is never mistaken for a present field.
+function slicerIntelArchiveReadPacket(bitLength, maximumBytes)
+    if type(bitLength) ~= "number" or bitLength ~= bitLength or bitLength < 0
+        or bitLength % 8 ~= 0 or bitLength > maximumBytes * 8 then return end
+    local size = bitLength / 8
+    local ok, bytes = pcall(net.ReadData, size)
+    if not ok or type(bytes) ~= "string" or #bytes ~= size then return end
+    local cursor = {position = 1, size = size, failed = false}
+    function cursor:byte()
+        if self.failed or self.position > self.size then self.failed = true; return end
+        local value = bytes:byte(self.position)
+        self.position = self.position + 1
+        return value
+    end
+    function cursor:string(cap)
+        if self.failed then return end
+        local ending = bytes:find("\0", self.position, true)
+        if not ending or ending - self.position > cap then self.failed = true; return end
+        local value = bytes:sub(self.position, ending - 1)
+        self.position = ending + 1
+        return value
+    end
+    function cursor:done()
+        return not self.failed and self.position == self.size + 1
+    end
+    return cursor
+end

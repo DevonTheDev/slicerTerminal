@@ -33,14 +33,29 @@ function slicerIntel.ClearBody(console)
 end
 
 local function playerState(ply, create)
-    if not IsValid(ply) or not ply:IsPlayer() then return end
     local state = players[ply]
-    if state and not sameGeneration(ply, state) then players[ply], state = nil, nil end
+    -- Every engine getter can reenter in a model or through an addon. Never
+    -- clear or return a replacement connection installed by such a callback.
+    if not IsValid(ply) or players[ply] ~= state then return end
+    if not ply:IsPlayer() or players[ply] ~= state then return end
+    local creationID = ply:GetCreationID()
+    if players[ply] ~= state then return end
+    local entityIndex = ply:EntIndex()
+    if players[ply] ~= state then return end
+    if state and (state.creationID ~= creationID or state.entityIndex ~= entityIndex) then
+        players[ply], state = nil, nil
+    end
     if not state and create then
-        state = {creationID = ply:GetCreationID(), entityIndex = ply:EntIndex()}
+        state = {creationID = creationID, entityIndex = entityIndex, records = {}, order = {}}
         players[ply] = state
     end
     return state
+end
+
+local function currentPlayer(ply, state)
+    if players[ply] ~= state then return false end
+    local current = playerState(ply, false)
+    return current == state and players[ply] == state
 end
 
 -- Called only after canComplete accepts. The record has copied scalar values,
@@ -56,6 +71,12 @@ function slicerIntel.Award(ply, console, information)
     awardSerial = awardSerial + 1 -- Never wrap or reuse an award identity.
     local record = {award = string.format("%.0f", awardSerial), body = body,
         consoleName = information.name, fileName = information.fileName, fileType = information.fileType}
+    state.records[record.award] = record
+    table.insert(state.order, 1, record)
+    if #state.order > 10 then
+        local oldest = table.remove(state.order)
+        state.records[oldest.award] = nil
+    end
     state.record = record
     return record
 end
@@ -89,6 +110,72 @@ hook.Add("PlayerSay", "slicerReadIntel", function(ply, text)
         ply:ChatPrint("No mission intel is available for this connection. Complete a data/server download with authored intel first.")
     end
     return ""
+end)
+
+util.AddNetworkString("SlicerIntelArchiveRequest")
+util.AddNetworkString("SlicerIntelArchiveReply")
+
+local function writeArchiveMetadata(record)
+    net.WriteString(record.award)
+    net.WriteString(slicerIntelArchiveName(record.consoleName))
+    net.WriteString(slicerIntelArchiveName(record.fileName))
+    net.WriteUInt(record.fileType == "data" and 0 or 1, 8)
+end
+
+local function archiveReply(ply, state, operation, request, status, record)
+    if not currentPlayer(ply, state) then return end
+    if record and state.records[record.award] ~= record then return end
+    local snapshot
+    if status == 0 and operation == 1 then
+        snapshot = {}
+        for index, saved in ipairs(state.order) do snapshot[index] = saved end
+    end
+    net.Start("SlicerIntelArchiveReply")
+        if not currentPlayer(ply, state) then return end
+        if record and state.records[record.award] ~= record then return end
+        net.WriteUInt(operation, 8)
+        net.WriteString(request)
+        net.WriteUInt(status, 8)
+        if snapshot then
+            net.WriteUInt(#snapshot, 8)
+            for _, saved in ipairs(snapshot) do writeArchiveMetadata(saved) end
+        elseif record then
+            writeArchiveMetadata(record)
+            net.WriteString(record.body)
+        end
+    -- An eviction or connection replacement during a callback must not expose
+    -- a body captured earlier. No send occurs until exact ownership is checked
+    -- again after the callback-capable generation getters.
+    if not currentPlayer(ply, state) then return end
+    if record and state.records[record.award] ~= record then return end
+    net.Send(ply)
+end
+
+net.Receive("SlicerIntelArchiveRequest", function(bitLength, ply)
+    local packet = slicerIntelArchiveReadPacket(bitLength, 35)
+    if not packet then return end
+    local operation, request, award = packet:byte(), packet:string(16), packet:string(16)
+    if not packet:done() or (operation ~= 1 and operation ~= 2)
+        or not validSlicerIntelAward(request)
+        or (operation == 1 and award ~= "")
+        or (operation == 2 and not validSlicerIntelAward(award)) then return end
+    -- Malformed traffic cannot allocate player state or spend a throttle.
+    local state = playerState(ply, true)
+    if not state then return end
+    local now = CurTime()
+    if not currentPlayer(ply, state) then return end
+    local key = operation == 1 and "nextArchiveList" or "nextArchiveRead"
+    if state[key] and now < state[key] then
+        archiveReply(ply, state, operation, request, 2)
+        return
+    end
+    state[key] = now + 1
+    if operation == 1 then
+        archiveReply(ply, state, operation, request, 0)
+    else
+        local record = state.records[award]
+        archiveReply(ply, state, operation, request, record and 0 or 1, record)
+    end
 end)
 
 local function clearPlayer(ply) players[ply] = nil end

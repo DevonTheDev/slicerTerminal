@@ -235,7 +235,7 @@ local slicerHelp = {
         "!setupConsole <row> opens an unconfigured, unreserved listed console with a unique runtime name among your consoles.",
         "!editConsole or !editConsole <row> opens a configured, idle console for name, delay and filename edits.",
         "Data/server mission intel is optional: add it after initial setup with !editConsole (4096-byte plain text). Duplicator copies omit it.",
-        "Only the downloader's latest intel is retained; newer intel replaces unread content and disconnect loses it.",
+        "The downloader's newest 10 clues are kept for this connection. Saved intel revisits earlier clues; disconnect/map change loses them.",
         "Bare !editConsole uses your eye target; row commands use your last list/find/near page (1-5, up to 60 seconds).",
         "Opening a form does not save it. Submit with Done or Save changes; accepted tools setup selects that console for linking.",
     },
@@ -257,7 +257,7 @@ local slicerHelp = {
         "!hackStatus privately shows your session's server minimum wait, not client progress or completion. You must be alive; no tool or eye target is needed.",
         "!quitConsole leaves only your current hacking session, even if its page is missing. You must be alive; no tool or eye target is needed.",
         "!readIntel opens or recovers your most recent authored mission intel; it works alive or dead, without a tool (one request per second).",
-        "Only the latest intel-bearing download is kept, even if unread. Disconnect/map change loses it; older replaced intel cannot be recovered.",
+        "Use Saved intel in the reader to revisit the newest 10 clues for this connection. A new clue removes the oldest when full; disconnect/map change loses them.",
         "Quitting preserves the console and saved links. Use it again for a fresh attempt; quitting cannot undo an accepted completion.",
     },
 }
