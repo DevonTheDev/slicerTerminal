@@ -946,9 +946,24 @@ net.Receive("SlicerSetupEditOpen", function()
         return not edit.retired and setupEditForms[console] == edit
             and setupEditTokens[token] == edit and isLiveCommandPanel(frame)
     end
+    -- Every editor owns its own immutable local preview, separate from awards.
+    local function detachPreview(preview)
+        if not preview or preview.retired then return end
+        preview.retired = true
+        if edit.preview == preview then edit.preview = nil end
+    end
+    local function retirePreview(preview)
+        preview = preview or edit.preview
+        if not preview or preview.retired then return end
+        detachPreview(preview) -- Detach before native removal can reenter.
+        local panel = preview.frame
+        if IsValid(panel) and not panel:IsMarkedForDeletion() then panel:Remove() end
+    end
     local function retire(cancel)
         if edit.retired then return end
         edit.retired = true -- Retire before any native cleanup or network send.
+        edit.previewRequest = nil
+        retirePreview()
         if setupEditForms[console] == edit then setupEditForms[console] = nil end
         if setupEditTokens[token] == edit then setupEditTokens[token] = nil end
         if cancel then
@@ -1000,7 +1015,7 @@ net.Receive("SlicerSetupEditOpen", function()
         scroll:SetSize(width, 246)
         content = scroll:Add("DPanel")
         content:Dock(TOP)
-        content:SetSize(width - 20, 600)
+        content:SetSize(width - 20, 646)
         content.Paint = function() end
     end
     local function label(text, y, labelHeight, parent)
@@ -1029,7 +1044,7 @@ net.Receive("SlicerSetupEditOpen", function()
     local delay = entry("Slice delay (seconds)", delayText, 110)
     local fileName = entry("Filename (no extension)", information.fileName, 180)
     label("Folder: " .. information.fileType .. " (fixed)", 250, 24)
-    local intel
+    local intel, previewButton
     if hasIntel then
         label("Mission intel (optional plain text)", 282)
         intel = vgui.Create("DTextEntry", content)
@@ -1045,7 +1060,11 @@ net.Receive("SlicerSetupEditOpen", function()
         end
         intel.OnChange = updateBytes
         updateBytes()
-        label("The downloader can revisit their newest 10 clues for this connection. New clues remove the oldest when full; disconnect/map change loses them. Duplicator copies omit intel. Blank text clears it.", 510, 84)
+        previewButton = vgui.Create("DButton", content)
+        previewButton:SetText("Preview intel")
+        previewButton:SetPos(20, 510)
+        previewButton:SetSize(width - 60, 36)
+        label("The downloader can revisit their newest 10 clues for this connection. New clues remove the oldest when full; disconnect/map change loses them. Duplicator copies omit intel. Blank text clears it.", 556, 84)
     end
     local status = label("Delay: positive finite seconds (e.g. 0.5). Then save.", 286, 60, frame)
     local save = vgui.Create("DButton", frame)
@@ -1059,14 +1078,114 @@ net.Receive("SlicerSetupEditOpen", function()
 
     local function setPending(pending)
         edit.pending = pending
+        if pending then
+            edit.previewRequest = nil
+            retirePreview()
+        end
+        local function current() return edit.isCurrent() and edit.pending == pending end
+        if not current() then return false end
         save:SetEnabled(not pending)
+        if not current() then return false end
         cancel:SetText(pending and "Close" or "Cancel")
+        if not current() then return false end
+        if previewButton then previewButton:SetEnabled(not pending) end
+        if not current() then return false end
         -- Acknowledgement cannot discard edits typed after the submitted draft.
-        for _, input in ipairs({name, delay, fileName, intel}) do input:SetEditable(not pending) end
+        for _, input in ipairs({name, delay, fileName, intel}) do
+            input:SetEditable(not pending)
+            if not current() then return false end
+        end
+        return true
     end
     local function showStatus(message, failed)
         status:SetText(message)
         status:SetTextColor(failed and Color(255, 150, 150, 255) or Color(220, 220, 220, 255))
+    end
+    if previewButton then
+        previewButton.DoClick = function()
+            if not edit.isCurrent() or edit.pending then return end
+            local request = {}
+            edit.previewRequest = request
+            retirePreview()
+            local function requested()
+                return edit.isCurrent() and not edit.pending and edit.previewRequest == request
+            end
+            if not requested() then return end
+            local raw = intel:GetValue() -- Include focused text without changing the draft.
+            if not requested() then return end
+            local snapshot, problem = normalizeSlicerIntel(raw)
+            if problem or snapshot == "" then
+                showStatus(problem or "No mission intel to preview", problem ~= nil)
+                return
+            end
+            local preview = {body = snapshot, retired = false}
+            edit.preview = preview
+            local previewFrame = vgui.Create("DFrame")
+            preview.frame = previewFrame
+            if not requested() or edit.preview ~= preview or preview.retired then
+                -- Creation itself may reenter and retire this incomplete record.
+                detachPreview(preview)
+                if IsValid(previewFrame) and not previewFrame:IsMarkedForDeletion() then previewFrame:Remove() end
+                return
+            end
+            local function current()
+                return requested() and edit.preview == preview and not preview.retired
+                    and isLiveCommandPanel(previewFrame)
+            end
+            local nativePreviewClose, nativePreviewRemove = previewFrame.Close, previewFrame.Remove
+            function previewFrame:Close()
+                detachPreview(preview)
+                return nativePreviewClose(self)
+            end
+            function previewFrame:Remove()
+                detachPreview(preview)
+                return nativePreviewRemove(self)
+            end
+            previewFrame.OnClose = function() detachPreview(preview) end
+            previewFrame.OnRemove = previewFrame.OnClose
+            -- Each native call may synchronously close/replace the owning form.
+            local function apply(panel, method, ...)
+                if not current() or not isLiveCommandPanel(panel) then return false end
+                panel[method](panel, ...)
+                return current()
+            end
+            local function child(class)
+                if not current() then return end
+                local panel = vgui.Create(class, previewFrame)
+                if current() then return panel end
+                if IsValid(panel) and not panel:IsMarkedForDeletion() then panel:Remove() end
+            end
+            if not apply(previewFrame, "SetTitle", "Mission intel preview (unsaved)") then return end
+            if not apply(previewFrame, "SetDeleteOnClose", true) then return end
+            if not apply(previewFrame, "SetDraggable", true) then return end
+            if not apply(previewFrame, "ShowCloseButton", true) then return end
+            local heading = child("DLabel")
+            if not apply(heading, "SetText", "Normalized draft snapshot") then return end
+            if not apply(heading, "SetWrap", true) then return end
+            local body = child("DTextEntry")
+            if not apply(body, "SetMultiline", true) then return end
+            if not apply(body, "SetText", preview.body) then return end -- Literal text only.
+            if not apply(body, "SetEditable", false) then return end
+            local footer = child("DLabel")
+            if not apply(footer, "SetWrap", true) then return end
+            if not apply(footer, "SetText", "Unsaved normalized draft snapshot. Save changes submits the current editor draft. Preview again after editing.") then return end
+            local function rect(panel, x, y, width, height)
+                return apply(panel, "SetPos", x, y) and apply(panel, "SetSize", width, height)
+            end
+            function preview.reflow(screenWidth, screenHeight)
+                if not current() or not supportedPlayerSize(screenWidth, screenHeight) then return end
+                local width, height = math.min(620, screenWidth - 40), math.min(520, screenHeight - 40)
+                if not rect(previewFrame, (screenWidth - width) / 2, (screenHeight - height) / 2, width, height) then return end
+                if not rect(heading, 16, 32, width - 32, 40) then return end
+                if not rect(body, 16, 80, width - 32, height - 212) then return end
+                rect(footer, 16, height - 124, width - 32, 108)
+            end
+            -- A new preview needs layout even if the editor has not resized.
+            local screenWidth, screenHeight = ScrW(), ScrH()
+            if not supportedPlayerSize(screenWidth, screenHeight) then screenWidth, screenHeight = 640, 480 end
+            preview.reflow(screenWidth, screenHeight)
+            apply(previewFrame, "MakePopup")
+        end
     end
     save.DoClick = function()
         if not edit.isCurrent() or edit.pending then return end
@@ -1099,8 +1218,9 @@ net.Receive("SlicerSetupEditOpen", function()
             focusInvalidCreatorField(edit, invalidInput)
             return
         end
-        setPending(true)
+        if not setPending(true) then return end
         showStatus("Saving changes... Closing cannot undo a submitted save.", false)
+        if not edit.isCurrent() or not edit.pending then return end
         net.Start("SlicerSetupEditSave")
             net.WriteEntity(console)
             net.WriteString(token)
@@ -1117,7 +1237,7 @@ net.Receive("SlicerSetupEditOpen", function()
             retire(false) -- The acknowledged ticket was consumed, not cancelled.
             frame:Close()
         elseif result.ok == false then
-            setPending(false)
+            if not setPending(false) then return end
             local message = type(result.message) == "string" and result.message ~= "" and result.message
                 or "Changes were not saved. Close this form and use !editConsole to reopen it."
             showStatus(message, true)
@@ -1125,6 +1245,8 @@ net.Receive("SlicerSetupEditOpen", function()
     end
     registerCreatorGeometry(edit, function(screenWidth, screenHeight)
         setCreatorRect(frame, (screenWidth - width) / 2, (screenHeight - height) / 2, width, height)
+        local preview = edit.preview
+        if preview and preview.reflow then preview.reflow(screenWidth, screenHeight) end
     end)
 end)
 
