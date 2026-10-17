@@ -1,3 +1,7 @@
+AddCSLuaFile("slicer/sh_intel.lua")
+include("slicer/sh_intel.lua")
+include("autorun/server/sv_slicer_intel.lua")
+
 AddCSLuaFile("entities/consoleent/shared.lua")
 AddCSLuaFile("entities/consoleent/cl_init.lua")
 AddCSLuaFile("weapons/weapon_hacking.lua")
@@ -77,7 +81,10 @@ local function currentEdit(ticket, ply, console)
     local information, normalized, record = editContext(ply, console)
     if not information or ticket.player ~= ply or ticket.console ~= console
         or ticket.information ~= information or ticket.record ~= record
-        or ticket.entityName ~= console:GetName() then return false end
+        or ticket.entityName ~= console:GetName()
+        or ticket.creationID ~= console:GetCreationID() or ticket.entityIndex ~= console:EntIndex()
+        or ticket.playerCreationID ~= ply:GetCreationID() or ticket.playerIndex ~= ply:EntIndex()
+        or ticket.intelBody ~= slicerIntel.GetBody(console) then return false end
     for _, field in ipairs(informationFields) do
         if ticket.snapshot[field] ~= normalized[field] then return false end
     end
@@ -142,12 +149,16 @@ hook.Add("PlayerSay", "slicerEditConsole", function(ply, text)
         end
         ticket = {player = ply, console = console, token = token,
             information = information, snapshot = normalized, record = record, entityName = console:GetName(),
+            creationID = console:GetCreationID(), entityIndex = console:EntIndex(),
+            playerCreationID = ply:GetCreationID(), playerIndex = ply:EntIndex(),
+            intelBody = slicerIntel.GetBody(console),
             displayIdentity = {creationID = console:GetCreationID(), entityIndex = console:EntIndex()}}
         editTickets[console] = ticket
     end
     -- Display context is captured per ticket, separate from its five saved fields.
     local payload = table.Copy(ticket.snapshot)
     payload.displayIdentity = table.Copy(ticket.displayIdentity)
+    if ticket.snapshot.fileType ~= "tools" then payload.intelBody = ticket.intelBody end
     net.Start("SlicerSetupEditOpen")
         net.WriteEntity(console)
         net.WriteEntity(ply)
@@ -177,6 +188,26 @@ net.Receive("SlicerSetupEditSave", function(_, ply)
     }) or nil
     if not information then
         editReply(ply, token, false, "Use nonblank names of at most 128 bytes and a finite positive delay.")
+        return
+    end
+    local body = ticket.intelBody
+    if fields.intelBody ~= nil then
+        local message
+        body, message = normalizeSlicerIntel(fields.intelBody)
+        if body == nil or (information.fileType == "tools" and body ~= "") then
+            editReply(ply, token, false, message or "Tools consoles cannot contain mission intel.")
+            return
+        end
+    end
+    -- Validation applies to the entire edit. Recheck custody and snapshots at
+    -- the commit boundary; neither metadata nor intel changes on a stale form.
+    if not currentEdit(ticket, ply, console) or editTickets[console] ~= ticket then
+        if editTickets[console] == ticket then retireSlicerSetupEdit(console) end
+        editReply(ply, token, false, "This console is unavailable or its setup has changed. " .. reopenEdit)
+        return
+    end
+    if not slicerIntel.SetBody(console, body) then
+        editReply(ply, token, false, "Mission intel could not be saved. " .. reopenEdit)
         return
     end
     console.SlicerInformation = information

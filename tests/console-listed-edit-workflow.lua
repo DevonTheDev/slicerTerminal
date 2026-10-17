@@ -29,6 +29,7 @@ return function(gmod, test, equal)
         for index = first, #client.panels do
             local panel = client.panels[index]
             if panel.class == "DFrame" then result.frame = panel
+            elseif panel.class == "DScrollPanel" then result.scroll = panel
             elseif panel.class == "DTextEntry" then entries[#entries + 1] = panel
             elseif panel.class == "DComboBox" then result.folder = panel
             elseif panel.class == "DButton" and panel.text == (editing and "Save changes" or "Done") then
@@ -36,7 +37,8 @@ return function(gmod, test, equal)
             end
         end
         assert(result.frame and result.submit, "Expected the existing configuration form")
-        equal(#entries, 3, "Name, delay and filename remain the only text fields")
+        equal(#entries, result.scroll and 4 or 3, "Data/server edits include the optional intel body")
+        result.intel = entries[4]
         result.name, result.delay, result.file = entries[1], entries[2], entries[3]
         if editing then
             assert(not result.folder or result.folder.enabled == false, "Saved folder cannot be edited")
@@ -222,12 +224,12 @@ return function(gmod, test, equal)
             equal(live(editing.frame), true, "Save waits for its acknowledgement")
             local save = assert(client.lastMessage("SlicerSetupEditSave"))
             equal(#save.values, 3); equal(save.values[1], selected); equal(save.values[2], token)
-            local fields, allowed = 0, {name = true, delay = true, fileName = true}
+            local fields, allowed = 0, {name = true, delay = true, fileName = true, intelBody = true}
             for key in pairs(save.values[3]) do
                 assert(allowed[key], "Save must contain only existing editable fields")
                 fields = fields + 1
             end
-            equal(fields, 3)
+            equal(fields, editing.intel and 4 or 3)
             local before = #server.messages
             relay(server, owner, save)
             equal(#server.messages, before + 1)

@@ -29,6 +29,7 @@ return function(gmod, test, equal)
         for index = first, #client.panels do
             local panel = client.panels[index]
             if panel.class == "DFrame" then form.frame = panel
+            elseif panel.class == "DScrollPanel" then form.scroll = panel
             elseif panel.class == "DTextEntry" then entries[#entries + 1] = panel
             elseif panel.class == "DComboBox" then form.folder = panel
             elseif panel.class == "DButton" and panel.text == "Done" then form.done = panel
@@ -36,7 +37,8 @@ return function(gmod, test, equal)
             elseif panel.class == "DButton" and panel.text == "Cancel" then form.cancel = panel end
         end
         assert(form.frame, "Expected a new " .. (editing and "edit" or "setup") .. " form")
-        equal(#entries, 3, "The form exposes name, delay and filename")
+        equal(#entries, form.scroll and 4 or 3, "Data/server edit adds intel; initial/tools keep three inputs")
+        form.intel = entries[4]
         form.name, form.delay, form.file = entries[1], entries[2], entries[3]
         if editing then
             assert(form.save, "Editor needs a Save action")
@@ -142,9 +144,9 @@ return function(gmod, test, equal)
         local packet = assert(session.client.lastMessage("SlicerSetupEditSave"))
         equal(#packet.values, 3); equal(packet.values[1], form.packet.values[1])
         equal(packet.values[2], form.token)
-        local fields, allowed = 0, {name = true, delay = true, fileName = true}
+        local fields, allowed = 0, {name = true, delay = true, fileName = true, intelBody = true}
         for key in pairs(packet.values[3]) do assert(allowed[key], "Save must only submit editable fields"); fields = fields + 1 end
-        equal(fields, 3)
+        equal(fields, form.intel and 4 or 3)
         return packet
     end
     local function save(session, form)

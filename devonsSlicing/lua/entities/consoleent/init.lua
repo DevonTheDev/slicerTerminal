@@ -30,7 +30,8 @@ local function releaseSession(ply, closeUI)
     local session = sessions[ply]
     if not session then return end
     sessions[ply] = nil
-    if session.console.SlicerInformation then
+    if IsValid(session.console) and session.console:GetCreationID() == session.consoleCreationID
+        and session.console:EntIndex() == session.consoleIndex and session.console.SlicerInformation then
         session.console.SlicerInformation.inUse = false
     end
     if closeUI and IsValid(ply) then
@@ -73,6 +74,7 @@ function ENT:OnEntityCopyTableFinish(data)
 end
 
 local function resetCopiedState(console)
+    slicerIntel.ClearBody(console)
     retireSlicerInitialSetup(console)
     retireSlicerSetupEdit(console)
     console.SlicerCreator, console.SlicerDoor = nil, nil
@@ -109,6 +111,8 @@ function ENT:PostEntityPaste(ply)
         table.insert(spawnedEntities, {entityName = self:GetName(), entity = self, information = information})
         if information.fileType == "tools" then
             ply:ChatPrint("Copied tools console is unlinked. Look at it and type !setEntity, then look at a " .. doorClassNames .. " and type !setEntity to link it.")
+        else
+            ply:ChatPrint("Copied console has no mission intel. Use !editConsole to add it after pasting.")
         end
     else
         ply:ChatPrint("Copied console needs setup. Use it to configure it.")
@@ -167,11 +171,13 @@ function ENT:AcceptInput(name, activator, caller)
 
     -- Reserve on the server before another player's Use can be handled. The
     -- client expects inUse=false in its own opening message.
-    local clientInformation = table.Copy(information)
+    local clientInformation = {name = information.name, delay = information.delay,
+        fileName = information.fileName, fileType = information.fileType, inUse = false}
     retireSlicerSetupEdit(self)
     information.inUse = true
     sessions[activator] = {
-        console = self,
+        console = self, consoleCreationID = self:GetCreationID(), consoleIndex = self:EntIndex(),
+        playerCreationID = activator:GetCreationID(), playerIndex = activator:EntIndex(),
         completeAt = CurTime() + information.delay * (information.fileType == "tools" and 1 or 2),
     }
     net.Start("ServerSendsEntityInformation")
@@ -228,6 +234,8 @@ local slicerHelp = {
         "Setup/edit require the living console creator. Use your unconfigured console to open setup without a hacking tool.",
         "!setupConsole <row> opens an unconfigured, unreserved listed console with a unique runtime name among your consoles.",
         "!editConsole or !editConsole <row> opens a configured, idle console for name, delay and filename edits.",
+        "Data/server mission intel is optional: add it after initial setup with !editConsole (4096-byte plain text). Duplicator copies omit it.",
+        "Only the downloader's latest intel is retained; newer intel replaces unread content and disconnect loses it.",
         "Bare !editConsole uses your eye target; row commands use your last list/find/near page (1-5, up to 60 seconds).",
         "Opening a form does not save it. Submit with Done or Save changes; accepted tools setup selects that console for linking.",
     },
@@ -248,6 +256,8 @@ local slicerHelp = {
         "In the terminal, click Commands (/help) or enter /help for the current screen's exact commands. Inserting one does not submit it.",
         "!hackStatus privately shows your session's server minimum wait, not client progress or completion. You must be alive; no tool or eye target is needed.",
         "!quitConsole leaves only your current hacking session, even if its page is missing. You must be alive; no tool or eye target is needed.",
+        "!readIntel opens or recovers your most recent authored mission intel; it works alive or dead, without a tool (one request per second).",
+        "Only the latest intel-bearing download is kept, even if unread. Disconnect/map change loses it; older replaced intel cannot be recovered.",
         "Quitting preserves the console and saved links. Use it again for a fresh attempt; quitting cannot undo an accepted completion.",
     },
 }
@@ -1140,6 +1150,11 @@ end)
 local function canComplete(ply, console, isDoor)
     local session = sessions[ply]
     if not session or session.console ~= console or not IsValid(console) then return false end
+    if console:GetCreationID() ~= session.consoleCreationID or console:EntIndex() ~= session.consoleIndex
+        or not IsValid(ply) or ply:GetCreationID() ~= session.playerCreationID or ply:EntIndex() ~= session.playerIndex then
+        releaseSession(ply, true)
+        return false
+    end
     local information = console.SlicerInformation
     local validType = information and (isDoor
         and information.fileType == "tools" and IsValid(console.SlicerDoor)
@@ -1155,7 +1170,14 @@ local function canComplete(ply, console, isDoor)
 end
 
 local function finishConsole(ply, console)
-    local information = console.SlicerInformation
+    local saved = console.SlicerInformation
+    local information = {name = saved.name, fileName = saved.fileName, fileType = saved.fileType}
+    local intel, failure = slicerIntel.Award(ply, console, information)
+    if failure then
+        releaseSession(ply, true)
+        ply:ChatPrint(failure)
+        return
+    end
     releaseSession(ply, false)
     console:Remove() -- OnRemove unlocks only this console's linked door.
     net.Start("SlicerCompleted")
@@ -1164,6 +1186,7 @@ local function finishConsole(ply, console)
         net.WriteString(information.fileType)
         net.WriteString(ply:GetName())
     net.Send(ply)
+    if intel then slicerIntel.Send(ply, intel, false) end
 end
 
 net.Receive("PlayerActivatedDoor", function(_, ply)
@@ -1179,6 +1202,7 @@ net.Receive("destroyOnServer", function(_, ply)
 end)
 
 function ENT:OnRemove()
+    slicerIntel.ClearBody(self)
     retireSlicerInitialSetup(self)
     retireSlicerSetupEdit(self)
     for ply, session in pairs(sessions) do

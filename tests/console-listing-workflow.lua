@@ -30,7 +30,7 @@ return function(gmod, test, equal)
         assert(packet, "Missing client packet")
         server.receive(packet.name, actor, unpackValues(packet.values))
     end
-    local function formSince(client, first, editing)
+    local function formSince(client, first, editing, information)
         local form, entries = {}, {}
         for index = first, #client.panels do
             local panel = client.panels[index]
@@ -40,7 +40,11 @@ return function(gmod, test, equal)
             elseif panel.class == "DButton" and panel.text == (editing and "Save changes" or "Done") then form.submit = panel
             elseif panel.class == "DButton" and panel.text == "Set up later" then form.later = panel end
         end
-        equal(#entries, 3, "Existing configuration form fields")
+        equal(#entries, editing and information.fileType ~= "tools" and 4 or 3, "Only data/server edits add an intel input")
+        if entries[4] then
+            equal(entries[4]:GetValue(), information.intelBody or "")
+            equal(entries[4].multiline, true)
+        end
         form.name, form.delay, form.file = entries[1], entries[2], entries[3]
         assert(form.frame and form.submit, "Missing existing configuration form")
         function form:fill(folder, name, delay, file)
@@ -54,7 +58,7 @@ return function(gmod, test, equal)
     local function openForm(client, packet, editing)
         local first = #client.panels + 1
         deliver(client, packet)
-        return formSince(client, first, editing)
+        return formSince(client, first, editing, editing and packet.values[4])
     end
     local function acceptSetup(server, client, owner, form)
         local request = assert(client.lastMessage("AdminFinishedCreation"))

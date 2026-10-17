@@ -426,7 +426,6 @@ return function(gmod, test, equal)
         written[1].displayIdentity.entityIndex = 999
         written[1].name = "tampered outgoing copy"
         prefill.displayIdentity.creationID = 888
-        console.id = firstID + 100 -- Display identity cannot become ticket authority.
         local repeated, nextPrefill = edit(server, owner, console)
         equal(repeated, token); equal(nextPrefill.name, "terminal")
         equal(nextPrefill.displayIdentity.creationID, firstID)
@@ -435,8 +434,15 @@ return function(gmod, test, equal)
         equal(information.name, "terminal"); equal(information.displayIdentity, nil)
         equal(save(server, owner, console, token).ok, true)
         equal(console.SlicerInformation.displayIdentity, nil)
-        local _, fresh = edit(server, owner, console)
+        local beforeReuse, beforeIdentity = edit(server, owner, console)
+        equal(beforeIdentity.displayIdentity.creationID, firstID)
+        console.id = firstID + 100 -- Real generation changes retire authority, unlike an outgoing display-copy mutation.
+        local replacement, fresh = edit(server, owner, console)
+        assert(replacement ~= beforeReuse, "Reused generation must get a fresh ticket")
         equal(fresh.displayIdentity.creationID, firstID + 100, "New ticket captures current identity")
+        equal(fresh.displayIdentity.entityIndex, firstIndex)
+        obsolete(save(server, owner, console, beforeReuse))
+        equal(save(server, owner, console, replacement).ok, true)
     end)
 
     test("same-name copied consoles retain separate identities even when creation IDs collide", function()

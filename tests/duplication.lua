@@ -125,11 +125,14 @@ return function(gmod, test, equal)
                 assert(duplicate.SlicerInformation ~= original.SlicerInformation)
                 assertRegistered(env, duplicate); assertOriginal(env, original, door)
                 equal(actor.SlicerPendingConsole, pending, "Pasting must preserve pending selection")
-                equal(#actor.chats - before, kind.folder == "tools" and 1 or 0)
+                equal(#actor.chats - before, 1, "Every configured paste explains omitted intel or linking")
                 if kind.folder == "tools" then
                     local notice = actor.chats[#actor.chats]
                     assert(notice:find("!setEntity", 1, true) and notice:find("func_door", 1, true))
                     assert(notice:lower():find("unlinked", 1, true))
+                else
+                    local notice = actor.chats[#actor.chats]
+                    assert(notice:find("no mission intel", 1, true) and notice:find("!editConsole", 1, true))
                 end
                 duplicate.SlicerInformation.name = "changed"
                 equal(original.SlicerInformation.name, "terminal"); equal(data.SlicerInformation.name, "terminal")

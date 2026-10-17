@@ -32,7 +32,7 @@ return function(gmod, test, equal)
         for _, packet in ipairs(client.messages) do if not name or packet.name == name then count = count + 1 end end
         return count
     end
-    local function readForm(client, first)
+    local function readForm(client, first, information)
         local form, entries = {labels = {}, controls = {}}, {}
         for i = first, #client.panels do
             local panel = client.panels[i]
@@ -45,7 +45,11 @@ return function(gmod, test, equal)
             assert(panel.class ~= "DComboBox", "Editing must not offer folder reassignment")
         end
         assert(form.frame and form.save and form.cancel, "Expected edit frame, Save changes and Cancel")
-        equal(#entries, 3, "Only name, delay and filename are editable")
+        equal(#entries, information.fileType ~= "tools" and 4 or 3, "Only data/server edits add an intel input")
+        if entries[4] then
+            equal(entries[4]:GetValue(), information.intelBody or "")
+            equal(entries[4].multiline, true)
+        end
         form.name, form.delay, form.file = entries[1], entries[2], entries[3]
         form.status = form.labels[#form.labels]
         function form:fill(name, delay, file)
@@ -62,9 +66,9 @@ return function(gmod, test, equal)
     end
     local function open(client, owner, console, token, info)
         local first = #client.panels + 1
-        client.receive("SlicerSetupEditOpen", nil, console, owner, token,
-            info or {name = "terminal", delay = 2, fileName = "secret", fileType = "tools"})
-        return readForm(client, first)
+        info = info or {name = "terminal", delay = 2, fileName = "secret", fileType = "tools"}
+        client.receive("SlicerSetupEditOpen", nil, console, owner, token, info)
+        return readForm(client, first, info)
     end
     local function fixture(width, height)
         local server, client = gmod.new(), clientAt(width, height)

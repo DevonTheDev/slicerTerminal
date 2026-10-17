@@ -72,6 +72,7 @@ return function(gmod, test, equal)
         for i = first, #client.panels do
             local panel = client.panels[i]
             if panel.class == "DFrame" then form.frame = panel
+            elseif panel.class == "DScrollPanel" then form.scroll = panel
             elseif panel.class == "DTextEntry" then entries[#entries + 1] = panel
             elseif panel.class == "DComboBox" then form.folder = panel
             elseif panel.class == "DButton" and (panel.text == "Done" or panel.text == "Save changes") then form.submit = panel
@@ -79,7 +80,8 @@ return function(gmod, test, equal)
             elseif panel.class == "DLabel" then form.status = panel end
         end
         assert(form.frame and form.submit and form.dismiss and form.status, "Expected original creator controls")
-        equal(#entries, 3, "Keep all three actual form inputs")
+        equal(#entries, form.scroll and 4 or 3, "Data/server edit adds intel; initial/tools keep three inputs")
+        form.intel = entries[4]
         form.name, form.delay, form.file = entries[1], entries[2], entries[3]
         form.inputs = entries
         form.controls = editing and {form.name, form.delay, form.file, form.submit, form.dismiss, form.status}

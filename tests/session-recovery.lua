@@ -267,7 +267,11 @@ return function(gmod, test, equal)
                 elseif panel.class == "DComboBox" then result.folder = panel
                 elseif panel.class == "DButton" and panel.text == (editing and "Save changes" or "Done") then result.submit = panel end
             end
-            equal(#fields, 3); result.name, result.delay, result.file = fields[1], fields[2], fields[3]
+            equal(#fields, editing and packet.values[4].fileType ~= "tools" and 4 or 3, "Only data/server edits add an intel input")
+            if fields[4] then
+                equal(fields[4]:GetValue(), packet.values[4].intelBody or "")
+                equal(fields[4].multiline, true)
+            end; result.name, result.delay, result.file = fields[1], fields[2], fields[3]
             result.name:SetText(editing and "Edited" or "Deferred"); result.delay:SetText("3"); result.file:SetText("Retained")
             if result.folder then result.folder.selected = "data" end
             return result

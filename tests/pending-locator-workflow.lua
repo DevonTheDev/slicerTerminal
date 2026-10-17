@@ -65,7 +65,11 @@ return function(gmod, test, equal)
                 result.submit = panel
             end
         end
-        equal(#entries, 3); assert(result.frame and result.submit)
+        equal(#entries, editing and packet.values[4].fileType ~= "tools" and 4 or 3, "Only data/server edits add an intel input")
+        if entries[4] then
+            equal(entries[4]:GetValue(), packet.values[4].intelBody or "")
+            equal(entries[4].multiline, true)
+        end; assert(result.frame and result.submit)
         result.name, result.delay, result.file = entries[1], entries[2], entries[3]
         function result:fill(name, folder)
             self.name:SetText(name); self.delay:SetText("2"); self.file:SetText("secret")

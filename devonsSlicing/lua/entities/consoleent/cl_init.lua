@@ -1,4 +1,5 @@
 include("entities/consoleent/shared.lua")
+include("slicer/sh_intel.lua")
 
 -- A private location snapshot, independent of forms and hacking sessions.
 local consoleLocation
@@ -988,22 +989,33 @@ net.Receive("SlicerSetupEditOpen", function()
     frame:ShowCloseButton(true)
     frame:MakePopup()
 
-    local function label(text, y, labelHeight)
-        local panel = vgui.Create("DLabel", frame)
+    local hasIntel = information.fileType ~= "tools"
+    local content = frame
+    if hasIntel then
+        local scroll = vgui.Create("DScrollPanel", frame)
+        scroll:SetPos(0, 30)
+        scroll:SetSize(width, 246)
+        content = scroll:Add("DPanel")
+        content:Dock(TOP)
+        content:SetSize(width - 20, 600)
+        content.Paint = function() end
+    end
+    local function label(text, y, labelHeight, parent)
+        local panel = vgui.Create("DLabel", parent or content)
         panel:SetFont("HackingFont")
         panel:SetTextColor(Color(220, 220, 220, 255))
         panel:SetText(text)
         panel:SetWrap(true)
         panel:SetPos(20, y)
-        panel:SetSize(width - 40, labelHeight or 20)
+        panel:SetSize(width - (hasIntel and not parent and 60 or 40), labelHeight or 20)
         return panel
     end
     local function entry(title, value, y)
         label(title, y)
-        local panel = vgui.Create("DTextEntry", frame)
+        local panel = vgui.Create("DTextEntry", content)
         panel:SetText(tostring(value))
         panel:SetPos(20, y + 22)
-        panel:SetSize(width - 40, 36)
+        panel:SetSize(width - (hasIntel and 60 or 40), 36)
         return panel
     end
     local name = entry("Console name", information.name, 40)
@@ -1014,7 +1026,25 @@ net.Receive("SlicerSetupEditOpen", function()
     local delay = entry("Slice delay (seconds)", delayText, 110)
     local fileName = entry("Filename (no extension)", information.fileName, 180)
     label("Folder: " .. information.fileType .. " (fixed)", 250, 24)
-    local status = label("Delay: positive finite seconds (e.g. 0.5). Then save.", 286, 60)
+    local intel
+    if hasIntel then
+        label("Mission intel (optional plain text)", 282)
+        intel = vgui.Create("DTextEntry", content)
+        intel:SetMultiline(true)
+        intel:SetPos(20, 308)
+        intel:SetSize(width - 60, 160)
+        intel:SetText(type(information.intelBody) == "string" and information.intelBody or "")
+        local counter = label("", 476, 24)
+        local function updateBytes()
+            local canonical = intel:GetValue():gsub("\r\n", "\n"):gsub("\r", "\n")
+            counter:SetText(tostring(#canonical) .. " / 4096 bytes")
+            counter:SetTextColor(#canonical > 4096 and Color(255, 150, 150, 255) or Color(220, 220, 220, 255))
+        end
+        intel.OnChange = updateBytes
+        updateBytes()
+        label("Only the downloader's latest intel is kept. Newer intel replaces unread clues; disconnect loses it. Duplicator copies omit intel. Blank text clears it.", 510, 84)
+    end
+    local status = label("Delay: positive finite seconds (e.g. 0.5). Then save.", 286, 60, frame)
     local save = vgui.Create("DButton", frame)
     save:SetText("Save changes")
     save:SetPos(20, 366)
@@ -1029,7 +1059,7 @@ net.Receive("SlicerSetupEditOpen", function()
         save:SetEnabled(not pending)
         cancel:SetText(pending and "Close" or "Cancel")
         -- Acknowledgement cannot discard edits typed after the submitted draft.
-        for _, input in ipairs({name, delay, fileName}) do input:SetEditable(not pending) end
+        for _, input in ipairs({name, delay, fileName, intel}) do input:SetEditable(not pending) end
     end
     local function showStatus(message, failed)
         status:SetText(message)
@@ -1056,6 +1086,11 @@ net.Receive("SlicerSetupEditOpen", function()
             invalidField = "Invalid filename: enter a nonblank filename of at most 128 bytes."
             invalidInput = fileName
         end
+        local enteredIntel
+        if not invalidField and intel then
+            enteredIntel, invalidField = normalizeSlicerIntel(intel:GetValue())
+            if invalidField then invalidInput = intel end
+        end
         if invalidField then
             showStatus(invalidField, true)
             focusInvalidCreatorField(edit, invalidInput)
@@ -1066,7 +1101,7 @@ net.Receive("SlicerSetupEditOpen", function()
         net.Start("SlicerSetupEditSave")
             net.WriteEntity(console)
             net.WriteString(token)
-            net.WriteTable({name = enteredName, delay = enteredDelay, fileName = enteredFile})
+            net.WriteTable({name = enteredName, delay = enteredDelay, fileName = enteredFile, intelBody = enteredIntel})
         net.SendToServer()
     end
     cancel.DoClick = function()
@@ -1937,6 +1972,96 @@ PURPOSE
 
 This code closes the UI if the player has died while in the console
 --]]/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+-- One latest record and a separate read-only window, never terminal history.
+local latestIntel, intelReader
+local function closeIntelReader()
+    local frame = intelReader
+    intelReader = nil
+    if IsValid(frame) and not frame:IsMarkedForDeletion() then frame:Remove() end
+end
+
+local function clearIntelReader()
+    closeIntelReader()
+    latestIntel = nil
+end
+hook.Add("ShutDown", "slicerIntelReader", clearIntelReader)
+hook.Add("InitPostEntity", "slicerIntelReader", clearIntelReader)
+
+local function presentIntel(record)
+    if isLiveCommandPanel(intelReader) then
+        intelReader:MakePopup()
+        intelReader:MoveToFront()
+        return
+    end
+    local frame = vgui.Create("DFrame")
+    intelReader = frame
+    frame:SetTitle("Mission intel: " .. record.fileName .. (record.fileType == "data" and ".data" or ".sys"))
+    frame:SetDeleteOnClose(true)
+    frame:SetDraggable(true)
+    frame:ShowCloseButton(true)
+    local nativeClose, nativeRemove = frame.Close, frame.Remove
+    local function retire()
+        if intelReader == frame then intelReader = nil end
+    end
+    function frame:Close() retire(); return nativeClose(self) end
+    function frame:Remove() retire(); return nativeRemove(self) end
+    frame.OnClose, frame.OnRemove = retire, retire
+
+    local heading = vgui.Create("DLabel", frame)
+    heading:SetText("From: " .. record.consoleName)
+    heading:SetWrap(true)
+    local body = vgui.Create("DTextEntry", frame)
+    body:SetMultiline(true)
+    body:SetText(record.body) -- Literal text: no markup, links or evaluation.
+    body:SetEditable(false)
+    local lifetime = vgui.Create("DLabel", frame)
+    lifetime:SetWrap(true)
+    lifetime:SetText("Most recent intel for this connection. !readIntel reopens or recovers it. Newer intel replaces this, even if unread. Disconnect/map change loses it.")
+    function frame.reflow(screenWidth, screenHeight)
+        if not isLiveCommandPanel(frame) or not supportedPlayerSize(screenWidth, screenHeight) then return end
+        local width, height = math.min(620, screenWidth - 40), math.min(520, screenHeight - 40)
+        setPlayerRect(frame, (screenWidth - width) / 2, (screenHeight - height) / 2, width, height)
+        setPlayerRect(heading, 16, 32, width - 32, 40)
+        setPlayerRect(body, 16, 80, width - 32, height - 176)
+        setPlayerRect(lifetime, 16, height - 88, width - 32, 72)
+    end
+    local width, height = ScrW(), ScrH()
+    if not supportedPlayerSize(width, height) then width, height = 640, 480 end
+    frame.reflow(width, height)
+    frame:MakePopup()
+end
+
+hook.Add("OnScreenSizeChanged", "slicerIntelReader", function()
+    if isLiveCommandPanel(intelReader) then intelReader.reflow(ScrW(), ScrH()) end
+end)
+
+net.Receive("SlicerIntel", function()
+    local award, consoleName, fileName, fileType = net.ReadString(), net.ReadString(), net.ReadString(), net.ReadString()
+    local body, recovery = net.ReadString(), net.ReadBool()
+    local canonical = normalizeSlicerIntel(body)
+    if not validSlicerIntelAward(award) or type(consoleName) ~= "string" or #consoleName > 128
+        or type(fileName) ~= "string" or #fileName > 128 or (fileType ~= "data" and fileType ~= "server")
+        or not canonical or canonical == "" or canonical ~= body then return end
+    if latestIntel then
+        local previous = latestIntel.award
+        if #award < #previous or (#award == #previous and award < previous) then return end
+        if award == previous then
+            if not recovery then return end -- A duplicate never steals focus or reopens a closed view.
+        else
+            closeIntelReader()
+            latestIntel = nil
+        end
+    end
+    latestIntel = latestIntel or {award = award, consoleName = consoleName,
+        fileName = fileName, fileType = fileType, body = body}
+    -- Record first: an interrupted presentation is recoverable with !readIntel.
+    local ok = pcall(presentIntel, latestIntel)
+    if not ok then
+        closeIntelReader()
+        chat.AddText(Color(255, 251, 0), "Mission intel is saved. Use !readIntel to try opening it again.")
+    end
+end)
+
 -- Only the server can confirm that a completion request was accepted.
 -- This notice changes chat only, never a newer terminal's UI.
 net.Receive("SlicerCompleted", function()

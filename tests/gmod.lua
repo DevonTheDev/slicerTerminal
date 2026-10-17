@@ -111,6 +111,7 @@ function M.new()
     function env.net.Start(name) env.outgoing = {name = name, values = {}} end
     function env.net.WriteEntity(value) table.insert(env.outgoing.values, value) end
     function env.net.WriteString(value) table.insert(env.outgoing.values, value) end
+    function env.net.WriteBool(value) table.insert(env.outgoing.values, value) end
     function env.net.WriteTable(value) table.insert(env.outgoing.values, copy(value)) end
     function env.net.Send(player)
         env.outgoing.player = player
@@ -118,7 +119,7 @@ function M.new()
         env.outgoing = nil
     end
     local function read() return table.remove(env.incoming, 1) end
-    env.net.ReadEntity, env.net.ReadString, env.net.ReadTable = read, read, read
+    env.net.ReadEntity, env.net.ReadString, env.net.ReadTable, env.net.ReadBool = read, read, read, read
     -- Only optional opening-suffix availability is modeled here. This is not a
     -- native codec: strings include their terminator, other values are opaque.
     function env.net.BytesLeft()
@@ -306,6 +307,7 @@ function M.client()
             assert(self.valid, "MoveToFront on removed panel")
             self.frontCalls = (self.frontCalls or 0) + 1
         end
+        function panel:SetMultiline(value) self.multiline = value end
         function panel:SetEditable(value)
             assert(self.valid, "SetEditable on removed panel")
             self.editable = value

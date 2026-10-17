@@ -1437,3 +1437,24 @@ emulated. Before a live rollout, use a test server to check:
 
 Use a fresh server session when deploying server-logic changes; live Lua
 refresh of an occupied terminal is not covered by the harness.
+
+
+## Readable mission intel
+
+Creators can attach an optional mission clue to a configured data/server console with `!editConsole` (or `!editConsole <row>`). Initial setup stays the same; add intel afterward. Tools consoles do not offer intel. The editor has a scrolling body area, a byte counter, and fixed Save/Cancel controls. Saving locks the submitted inputs until the ordinary saved-edit reply arrives. If that reply is lost, close and reopen the editor to read the saved values.
+
+Mission intel is plain UTF-8 text, up to **4,096 bytes** after CRLF/lone CR become LF. Tabs and newlines are allowed; invalid UTF-8, NUL and other control characters are rejected with an error. Nonblank text preserves its case and whitespace. ASCII spaces/tabs/newlines alone count as empty; saving an empty field clears the clue. Over-limit text is never silently cut off. Metadata and body save together, and stale edits reject the whole save. A legacy save that omits the intel field preserves the current body.
+
+After the server accepts an intel-bearing data/server completion, the downloader gets a separate read-only window. The body renders literally, without links, markup or commands. Use **`!readIntel`** with no arguments to reopen it or recover a missed delivery. This command works alive or dead, without a hacking tool, and replies privately at most once per second. It does not retry a hack or grant another reward. The existing `!slicerHelp hacking` includes recovery instructions even when the initial intel message never arrived.
+
+**Only the latest intel-bearing download is kept for the current connection.** A newer award replaces the previous clue even if it was unread or never delivered. Tools runs and downloads with no authored body leave the previous intel intact. Death, respawn, weapon changes, reader closure and removal of the downloaded console do not erase the record. Disconnect, map change or restart loses it. There is no old-award archive, persistent inventory, automatic redelivery or recovery after reconnect. A missed newer message can leave an older window visible until `!readIntel` retrieves the server's latest record.
+
+Bodies remain in a server-only store keyed to the exact console generation. They are not attached to public settings, registry rows, entity Lua fields, networked variables or ordinary Duplicator data. Before accepted completion only the authorized creator's edit response includes the body. Public Use/list/search/inspect/help and decoy/file metadata never contain it; `!findConsoleFiles` searches saved filename/folder metadata only. Server operators and arbitrary server-side Lua are outside this privacy boundary, and someone who receives a clue can share it manually.
+
+**Duplicator copies omit intel.** Pasted data/server consoles show this in private feedback and start with an empty body; use `!editConsole` to author a new clue. The original retains its clue, including when copied while busy or by another permitted player. Public configuration and existing creator/linking rules are unchanged.
+
+The server stores an immutable latest record before releasing the session or removing the console. A failed reader or lost message therefore does not consume the recovery record. Award identifiers are server-issued, monotonically increasing and never wrap; they are ordering data, not client-supplied authorization. Duplicate messages do not create duplicate readers or repeat success notices, while an explicit recovery can reopen the same award after closure or a display failure. The reader is independent of ordinary hacking pages, command recall, navigation and equipped tools.
+
+Run `lua tests/run-intel.lua` from the repository root for the focused intel fixtures, or `lua tests/run.lua` for the full host-model suite (Lua 5.3).
+
+Qualification: the host-model fixtures exercise actual Lua handlers with simulated engine transport and UI objects. They cannot establish native multiplayer packet isolation, Duplicator serialization, UTF-8 glyph/selection/scroll behavior, reconnect/map lifecycle or compatibility with other addons. Those require targeted Garry's Mod observations; no native readiness claim follows from source review or model results alone. The existing minimum-duration completion gate is unchanged and is not proof that every client command was entered.

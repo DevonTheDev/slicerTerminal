@@ -15,7 +15,11 @@ return function(gmod, test, equal)
             elseif panel.class == "DComboBox" then result.folder = panel
             elseif panel.class == "DButton" and panel.text == (editing and "Save changes" or "Done") then result.submit = panel end
         end
-        assert(result.frame and result.submit); equal(#entries, 3)
+        assert(result.frame and result.submit); equal(#entries, editing and packet.values[4].fileType ~= "tools" and 4 or 3, "Only data/server edits add an intel input")
+        if entries[4] then
+            equal(entries[4]:GetValue(), packet.values[4].intelBody or "")
+            equal(entries[4].multiline, true)
+        end
         result.name, result.delay, result.file = entries[1], entries[2], entries[3]
         return result
     end

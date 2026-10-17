@@ -42,7 +42,7 @@ return function(gmod, test, equal)
         deliver(client, reply)
         equal(form.frame.valid, false, "Initial setup closes only on matching acceptance")
     end
-    local function formSince(client, first, editing)
+    local function formSince(client, first, editing, information)
         local form, entries = {}, {}
         for index = first, #client.panels do
             local panel = client.panels[index]
@@ -51,7 +51,11 @@ return function(gmod, test, equal)
             elseif panel.class == "DComboBox" then form.folder = panel
             elseif panel.class == "DButton" and panel.text == (editing and "Save changes" or "Done") then form.submit = panel end
         end
-        equal(#entries, 3, "Existing configuration form fields")
+        equal(#entries, editing and information.fileType ~= "tools" and 4 or 3, "Only data/server edits add an intel input")
+        if entries[4] then
+            equal(entries[4]:GetValue(), information.intelBody or "")
+            equal(entries[4].multiline, true)
+        end
         form.name, form.delay, form.file = entries[1], entries[2], entries[3]
         assert(form.frame and form.submit, "Missing existing configuration form")
         return form
@@ -237,7 +241,7 @@ return function(gmod, test, equal)
             local packet = assert(server.lastMessage("SlicerSetupEditOpen"))
             local token, first = packet.values[3], #client.panels + 1
             deliver(client, packet)
-            local form = formSince(client, first, true)
+            local form = formSince(client, first, true, packet.values[4])
             server.now = 10; server.open(hacker, linked)
             owner.weapon = nil
             for _ = 1, 3 do
